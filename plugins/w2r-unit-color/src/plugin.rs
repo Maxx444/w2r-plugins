@@ -11,7 +11,7 @@
 //! folder a plugin can write (docs/abi.md, `data_open`). On an older host the card also has one
 //! text box per colour.
 //!
-//! Allied Minimap Colors (personal build, after Lambchops' Allied Color for the Battle.net
+//! Allied Minimap Colors (personal build, after Lambchops' Allied Colors for the Battle.net
 //! Edition): the same tick rewrites the game's eight-byte per-player minimap colour table, allies
 //! blue and enemies red, and polls the toggle key. The table has no host symbol, so it is found at
 //! a fixed distance from `TeamColourRgba` for build 1.0.2.2818 and used only after its stock copy
@@ -413,7 +413,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
             W2R_SETTING_BOOL,
             allied::ENABLED_KEY,
             "Allied Minimap Colors",
-            "On the minimap, allies are blue and enemies red; your own units keep their color. The hotkey below turns it on and off in a match. After Lambchops' Allied Color for the Battle.net Edition.",
+            "On the minimap, allies are blue and enemies red; your own units keep their color. The hotkey below turns it on and off in a match. Inspired by Lambchops' Allied Colors for the Battle.net Edition.",
             ALLIED_SUBCATEGORY,
         );
         submit(&d, allied::ENABLED_KEY);
@@ -1171,7 +1171,7 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             }
             label(
                 ui,
-                "Allied Minimap Colors: idea and method by Lambchops (BNE Allied Color).",
+                "Allied Minimap Colors: inspired by Lambchops' Allied Colors (Battle.net Edition).",
             );
         } else {
             label(
@@ -1189,7 +1189,7 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         );
         label(
             ui,
-            "Credits: Beau Hastings, Luxray997, Maxx444; earlier work by Mateuszk and Lambchops.",
+            "Credits: Beau Hastings, Luxray997, Maxx444. Inspired by mauritsschelvis87 (War_2_Remastered_Mods) and Lambchops (Allied Colors).",
         );
     }
 }

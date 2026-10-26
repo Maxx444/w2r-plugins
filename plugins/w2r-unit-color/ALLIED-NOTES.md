@@ -5,7 +5,8 @@ hastinbe/w2r-plugins. User-facing documentation is in [README.md](README.md#alli
 
 ## Credit
 
-Idea and method: **Lambchops**, *Allied Color* (`allied_color.w2p`) for the Warcraft II
+Idea and method: **Lambchops**, *Allied Colors* (`allied_color.w2p`,
+<https://forum.war2.ru/index.php?topic=4910.15>) for the Warcraft II
 Battle.net Edition Combat Edition. No code from it is used here; the `.w2p` is not included in this
 repository (it is someone else's binary, and the plugin rules allow source only).
 

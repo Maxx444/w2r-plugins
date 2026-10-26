@@ -1,5 +1,5 @@
 //! Allied Minimap Colors: allies blue and enemies red on the minimap, your own units unchanged.
-//! The idea and the method come from Lambchops' "Allied Color" plugin (`allied_color.w2p`) for the
+//! The idea and the method come from Lambchops' "Allied Colors" plugin (`allied_color.w2p`) for the
 //! Warcraft II Battle.net Edition Combat Edition: it rewrote the game's eight-byte per-player
 //! minimap colour table from the alliance table and toggled with a key. Remastered still has that
 //! table. Pure rules only, tested on any machine; the game-facing half is in `plugin`.

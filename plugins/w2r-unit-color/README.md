@@ -15,8 +15,11 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
 - **Luxray997**: the "Black2Pink" option of [wc2r-plus](https://github.com/Luxray997/wc2r-plus)
   (MIT), where the recolor started.
 - **Maxx444**: Unit Color (all eight colors, color profiles, Allied Minimap Colors).
-- Earlier work: **Mateuszk**, and **Lambchops**, whose *Allied Color* plugin for the Battle.net
-  Edition is the idea behind Allied Minimap Colors.
+- **mauritsschelvis87**: [War_2_Remastered_Mods](https://github.com/mauritsschelvis87-crypto/War_2_Remastered_Mods),
+  the inspiration for Unit Color.
+- **Lambchops**: *Allied Colors* for the Battle.net Edition
+  ([forum.war2.ru](https://forum.war2.ru/index.php?topic=4910.15)), the inspiration for Allied
+  Minimap Colors.
 
 ## Settings
 
@@ -78,8 +81,9 @@ Shows **allies in blue and enemies in red on the minimap**, so you can tell side
 glance whatever colors the match handed out. Your own units keep their color. The units on the
 main map are not changed. It is **off by default**.
 
-**Credit:** the idea and the method come from **Lambchops**' *Allied Color* plugin
-(`allied_color.w2p`) for the Warcraft II Battle.net Edition Combat Edition. This is a new
+**Credit:** the idea and the method come from **Lambchops**' *Allied Colors* plugin
+(`allied_color.w2p`, [forum.war2.ru](https://forum.war2.ru/index.php?topic=4910.15)) for the
+Warcraft II Battle.net Edition Combat Edition. This is a new
 implementation for Remastered; none of that plugin's code is used (it was written for the old
 executable and cannot load in Remastered).
 
