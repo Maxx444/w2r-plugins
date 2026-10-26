@@ -11,10 +11,11 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
 
 ## Credits
 
-- **Beau Hastings** (hastinbe): Black Recolor, which this plugin replaces, and the W2R Mod Loader.
-- **Luxray997**: the "Black2Pink" option of [wc2r-plus](https://github.com/Luxray997/wc2r-plus)
-  (MIT), where the recolor started.
-- **Maxx444**: Unit Color (all eight colors, color profiles, Allied Minimap Colors).
+- **Beau Hastings** (hastinbe):
+  [Black Recolor](https://github.com/hastinbe/w2r-plugins/tree/main/plugins/w2r-black-recolor),
+  which this plugin replaces, and the W2R Mod Loader.
+- **Luxray997**: [wc2r-plus](https://github.com/Luxray997/wc2r-plus) (MIT), whose "Black2Pink"
+  option is where the recolor started.
 - **mauritsschelvis87**: [War_2_Remastered_Mods](https://github.com/mauritsschelvis87-crypto/War_2_Remastered_Mods),
   the inspiration for Unit Color.
 - **Lambchops**: *Allied Colors* for the Battle.net Edition
