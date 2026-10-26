@@ -38,8 +38,15 @@ const NAME_CAP: usize = model::MAX_NAME + 1;
 const CATEGORY: &str = "Unit Color";
 /// The heading doubles as the notice that the swatches catch up on the next visit (the screen
 /// keeps its own copy of each value while it is open). At most 32 bytes.
-const PROFILE_SUBCATEGORY: &str = "Profile (Reopen to See Colors)";
+const PROFILE_SUBCATEGORY: &str = "Reopen Menu to see APPLIED color";
 const SAVE_SUBCATEGORY: &str = "Save Profile";
+// The host refuses a category or subcategory over 32 bytes, and with it the whole declaration.
+const _: () = assert!(
+    CATEGORY.len() <= 32
+        && PROFILE_SUBCATEGORY.len() <= 32
+        && SAVE_SUBCATEGORY.len() <= 32
+        && SUBCATEGORY.len() <= 32
+);
 const SUBCATEGORY: &str = "Player Colors";
 
 type MenuButtonsFn = unsafe extern "C" fn(i32);

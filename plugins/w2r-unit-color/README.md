@@ -13,7 +13,7 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
 
 **Options > Unit Color** (needs a W2R Mod Loader with the options screen):
 
-- **Profile (Reopen to See Colors) > Color Profile:** a dropdown with Custom, Game default, then the
+- **Reopen Menu to see APPLIED color > Color Profile:** a dropdown with Custom, Game default, then the
   profiles in `color_profiles.ini` (up to 14, by name) as they were when the game started. Choose one and
   press Apply. It shows the profile whose colors are in use, or Custom once you change a color by
   hand.
@@ -27,8 +27,8 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
   color side by side. Picking the game's own color means no change for that team.
 
 The screen keeps its own copy of every value while it is open, so after choosing a profile and
-pressing Apply the swatches show its colors only the next time you open Options; the Profile
-heading says so. If you change the dropdown and a picker in the same visit, the profile wins.
+pressing Apply the swatches show its colors only the next time you open Options; the heading
+above the dropdown says so. If you change the dropdown and a picker in the same visit, the profile wins.
 
 **The plugin's card** (title screen > Manage), for what the options screen cannot do:
 
