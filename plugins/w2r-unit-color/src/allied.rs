@@ -1,0 +1,188 @@
+//! Allied Minimap Colors: allies blue and enemies red on the minimap, your own units unchanged.
+//! The idea and the method come from Lambchops' "Allied Color" plugin (`allied_color.w2p`) for the
+//! Warcraft II Battle.net Edition Combat Edition: it rewrote the game's eight-byte per-player
+//! minimap colour table from the alliance table and toggled with a key. Remastered still has that
+//! table. Pure rules only, tested on any machine; the game-facing half is in `plugin`.
+
+/// Number of player slots in the minimap colour table.
+pub const SLOTS: usize = 8;
+
+/// The game's stock minimap colours by colour index (red .. yellow): render palette entries.
+/// The game copies `STOCK[colour of player p]` into the live table when a match starts. Seeing
+/// exactly these bytes is also how the plugin checks it found the table (build 1.0.2.2818).
+pub const STOCK: [u8; SLOTS] = [0xd0, 0x01, 0xd8, 0xdc, 0xe0, 0xe4, 0xff, 0x02];
+
+/// Palette entry for an ally's dots: the stock blue dot.
+pub const ALLY: u8 = 0x01;
+/// Palette entry for an enemy's dots: the stock red dot (the first entry of the red ramp, so a
+/// custom Player 1 (Red) color changes it too).
+pub const ENEMY: u8 = 0xd0;
+
+/// `DiplomacyStance` is indexed `[player * 16 + other]` (as the host's minimap ping reads it).
+pub const STANCE_STRIDE: usize = 16;
+
+/// Settings keys.
+pub const ENABLED_KEY: &str = "allied_minimap";
+pub const HOTKEY_KEY: &str = "allied_hotkey";
+
+/// The toggle key choices, in dropdown order, with their Windows virtual-key codes (0: none).
+pub const HOTKEYS: [(&str, i32); 10] = [
+    ("F2", 0x71),
+    ("F3", 0x72),
+    ("F4", 0x73),
+    ("F6", 0x75),
+    ("F7", 0x76),
+    ("F8", 0x77),
+    ("Insert", 0x2d),
+    ("Home", 0x24),
+    ("End", 0x23),
+    ("None (checkbox only)", 0),
+];
+
+/// F2, the default.
+pub const DEFAULT_HOTKEY: i64 = 0;
+
+/// The hotkey choice stored as `index`: its label and virtual-key code. Out of range is F2.
+pub fn hotkey(index: i64) -> (&'static str, i32) {
+    usize::try_from(index)
+        .ok()
+        .and_then(|i| HOTKEYS.get(i))
+        .copied()
+        .unwrap_or(HOTKEYS[DEFAULT_HOTKEY as usize])
+}
+
+/// The live table the game uses outside Allied Minimap Colors: each player's stock dot by the
+/// colour the match gave them (`reorder[p]`, `TeamColourReorder`). A colour index out of range
+/// keeps what is there now.
+pub fn stock_table(reorder: &[u8; SLOTS], current: &[u8; SLOTS]) -> [u8; SLOTS] {
+    let mut out = *current;
+    for (p, slot) in out.iter_mut().enumerate() {
+        if let Some(&dot) = STOCK.get(usize::from(reorder[p])) {
+            *slot = dot;
+        }
+    }
+    out
+}
+
+/// The live table with Allied Minimap Colors on. `stance_row` is the local player's row of
+/// `DiplomacyStance` (non-zero: allied). The local player keeps their own dot; `None` when the
+/// local player is not one of the eight (nothing to colour against).
+pub fn allied_table(
+    local: u8,
+    stance_row: &[u8; SLOTS],
+    reorder: &[u8; SLOTS],
+    current: &[u8; SLOTS],
+) -> Option<[u8; SLOTS]> {
+    let local = usize::from(local);
+    if local >= SLOTS {
+        return None;
+    }
+    let stock = stock_table(reorder, current);
+    let mut out = [0u8; SLOTS];
+    for (p, slot) in out.iter_mut().enumerate() {
+        *slot = if p == local {
+            stock[p]
+        } else if stance_row[p] != 0 {
+            ALLY
+        } else {
+            ENEMY
+        };
+    }
+    Some(out)
+}
+
+/// Turns a key held down into one press: true only on the frame it goes down. `armed` false (the
+/// game window not in front, the chat box open, outside a match) still follows the key, so holding
+/// it while typing does not fire when the chat box closes.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Toggle {
+    was_down: bool,
+}
+
+impl Toggle {
+    pub const fn new() -> Self {
+        Self { was_down: false }
+    }
+
+    pub fn pressed(&mut self, down: bool, armed: bool) -> bool {
+        let fire = down && !self.was_down && armed;
+        self.was_down = down;
+        fire
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const IDENTITY: [u8; SLOTS] = [0, 1, 2, 3, 4, 5, 6, 7];
+
+    #[test]
+    fn stock_follows_the_colour_each_player_got() {
+        assert_eq!(stock_table(&IDENTITY, &[0; SLOTS]), STOCK);
+        let reorder = [1, 0, 2, 3, 4, 5, 6, 7];
+        let t = stock_table(&reorder, &[0; SLOTS]);
+        assert_eq!(t[0], 0x01);
+        assert_eq!(t[1], 0xd0);
+        // An unknown colour keeps what is there.
+        let t = stock_table(&[9, 0, 0, 0, 0, 0, 0, 0], &[0x55; SLOTS]);
+        assert_eq!(t[0], 0x55);
+        assert_eq!(t[1], 0xd0);
+    }
+
+    #[test]
+    fn allies_blue_enemies_red_self_unchanged() {
+        // Player 2 (index 2) is local; allied with 0 and 5.
+        let mut row = [0u8; SLOTS];
+        row[0] = 1;
+        row[5] = 1;
+        let t = allied_table(2, &row, &IDENTITY, &STOCK).unwrap();
+        assert_eq!(t, [ALLY, ENEMY, 0xd8, ENEMY, ENEMY, ALLY, ENEMY, ENEMY]);
+    }
+
+    #[test]
+    fn self_keeps_its_own_dot_even_if_the_stance_row_says_allied() {
+        let row = [1u8; SLOTS];
+        let t = allied_table(0, &row, &IDENTITY, &STOCK).unwrap();
+        assert_eq!(t[0], 0xd0);
+        assert!(t[1..].iter().all(|&d| d == ALLY));
+    }
+
+    #[test]
+    fn no_local_player_no_table() {
+        assert_eq!(allied_table(8, &[0; SLOTS], &IDENTITY, &STOCK), None);
+        assert_eq!(allied_table(255, &[0; SLOTS], &IDENTITY, &STOCK), None);
+    }
+
+    #[test]
+    fn hotkey_defaults_to_f2() {
+        assert_eq!(hotkey(DEFAULT_HOTKEY), ("F2", 0x71));
+        assert_eq!(hotkey(-1), ("F2", 0x71));
+        assert_eq!(hotkey(99), ("F2", 0x71));
+        assert_eq!(hotkey(6), ("Insert", 0x2d));
+        assert_eq!(hotkey(9).1, 0);
+        // The host takes at most 16 choices of at most 64 bytes.
+        assert!(HOTKEYS.len() >= 2 && HOTKEYS.len() <= 16);
+        assert!(HOTKEYS.iter().all(|(l, _)| l.len() <= 64));
+    }
+
+    #[test]
+    fn toggle_fires_once_per_press() {
+        let mut t = Toggle::default();
+        assert!(!t.pressed(false, true));
+        assert!(t.pressed(true, true));
+        assert!(!t.pressed(true, true)); // held
+        assert!(!t.pressed(true, true)); // the second view's call in the same frame
+        assert!(!t.pressed(false, true));
+        assert!(t.pressed(true, true));
+    }
+
+    #[test]
+    fn toggle_ignores_a_key_held_while_not_armed() {
+        let mut t = Toggle::default();
+        assert!(!t.pressed(true, false)); // typing F2 in chat
+        assert!(!t.pressed(true, true)); // chat closed, key still down
+        assert!(!t.pressed(false, true));
+        assert!(t.pressed(true, true));
+    }
+}

@@ -10,14 +10,21 @@
 //! the profiles in `color_profiles.json`, which lives in the plugin's own data folder, the only
 //! folder a plugin can write (docs/abi.md, `data_open`). On an older host the card also has one
 //! text box per colour.
+//!
+//! Allied Minimap Colors (personal build, after Lambchops' Allied Color for the Battle.net
+//! Edition): the same tick rewrites the game's eight-byte per-player minimap colour table, allies
+//! blue and enemies red, and polls the toggle key. The table has no host symbol, so it is found at
+//! a fixed distance from `TeamColourRgba` for build 1.0.2.2818 and used only after its stock copy
+//! is seen holding the expected bytes (see `setup_minimap`).
 
 use core::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use w2r_abi::*;
 
+use crate::allied;
 use crate::model::{self, Colors, PLAYERS, Profile, RAMP, Rgb};
 use crate::profiles;
 
@@ -40,11 +47,48 @@ const CATEGORY: &str = "Unit Color";
 /// every group of rows, so it cannot be left out). At most 32 bytes.
 const PROFILE_SUBCATEGORY: &str = "Profiles";
 // The host refuses a category or subcategory over 32 bytes, and with it the whole declaration.
-const _: () =
-    assert!(CATEGORY.len() <= 32 && PROFILE_SUBCATEGORY.len() <= 32 && SUBCATEGORY.len() <= 32);
+const _: () = assert!(
+    CATEGORY.len() <= 32
+        && PROFILE_SUBCATEGORY.len() <= 32
+        && SUBCATEGORY.len() <= 32
+        && ALLIED_SUBCATEGORY.len() <= 32
+);
 const SUBCATEGORY: &str = "Player Colors";
+const ALLIED_SUBCATEGORY: &str = "Allied Minimap Colors";
+
+/// Build 1.0.2.2818: `TeamColourRgba` (0x008c9640) minus the live minimap colour table
+/// (0x008c8d64, read by the minimap dot drawing at 0x004c2d6b and 0x004f8531). The stock copy by
+/// colour index follows 0x20 bytes later (0x008c8d84; the match start copies it into the live one
+/// at 0x004f09c3). Found in the game's code, not a host symbol.
+const MINIMAP_BEFORE_TABLE: usize = 0x8dc;
+const MINIMAP_STOCK_AFTER_LIVE: usize = 0x20;
 
 type MenuButtonsFn = unsafe extern "C" fn(i32);
+
+/// What Allied Minimap Colors reads and writes.
+struct Minimap {
+    live: *mut u8,
+    local: *const u8,
+    stance: *const u8,
+    reorder: *const u8,
+    chat_dialog: *const *mut c_void,
+}
+
+// SAFETY: addresses of the game's globals, fixed for the session; used from the main thread.
+unsafe impl Send for Minimap {}
+unsafe impl Sync for Minimap {}
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn GetAsyncKeyState(vkey: i32) -> i16;
+    fn GetForegroundWindow() -> *mut c_void;
+    fn GetWindowThreadProcessId(window: *mut c_void, pid: *mut u32) -> u32;
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetCurrentProcessId() -> u32;
+}
 
 struct Game {
     table: *mut f32,
@@ -104,6 +148,15 @@ static LISTED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static LAST_CHOICE: Mutex<i64> = Mutex::new(model::CHOICE_GAME_DEFAULT);
 static SLOTS: Mutex<[Slot; PLAYERS]> = Mutex::new([EMPTY_SLOT; PLAYERS]);
 static PAGE: Mutex<Option<Page>> = Mutex::new(None);
+/// Set when the minimap table was found and checked; Allied Minimap Colors is off without it.
+static MINIMAP: OnceLock<Minimap> = OnceLock::new();
+/// Allied Minimap Colors on (the `allied_minimap` setting).
+static ALLIED: AtomicBool = AtomicBool::new(false);
+/// The toggle key's virtual-key code (0: none).
+static HOTKEY: AtomicI32 = AtomicI32::new(0x71);
+/// True while the live minimap table holds what the plugin wrote.
+static MINIMAP_OWNED: AtomicBool = AtomicBool::new(false);
+static KEY: Mutex<allied::Toggle> = Mutex::new(allied::Toggle::new());
 
 fn host() -> Option<&'static W2rHost> {
     unsafe { HOST.load(Ordering::Acquire).as_ref() }
@@ -309,6 +362,30 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         let mut d = def(W2R_SETTING_COLOR, &key, &label, &description, SUBCATEGORY);
         d.default_str = s(&default);
         submit(&d, &key);
+    }
+
+    // Allied Minimap Colors, only when the minimap table was found.
+    if MINIMAP.get().is_some() {
+        let d = def(
+            W2R_SETTING_BOOL,
+            allied::ENABLED_KEY,
+            "Allied Minimap Colors",
+            "On the minimap, allies are blue and enemies red; your own units keep their color. The hotkey below turns it on and off in a match. After Lambchops' Allied Color for the Battle.net Edition.",
+            ALLIED_SUBCATEGORY,
+        );
+        submit(&d, allied::ENABLED_KEY);
+        let keys: Vec<W2rStr> = allied::HOTKEYS.iter().map(|(l, _)| s(l)).collect();
+        let mut d = def(
+            W2R_SETTING_CHOICE,
+            allied::HOTKEY_KEY,
+            "Allied Minimap Colors Hotkey",
+            "Press it in a match to turn Allied Minimap Colors on or off. It does nothing while the chat box is open or the game window is in the background. Default F2.",
+            ALLIED_SUBCATEGORY,
+        );
+        d.default_int = allied::DEFAULT_HOTKEY;
+        d.choices = keys.as_ptr();
+        d.choice_count = keys.len() as u32;
+        submit(&d, allied::HOTKEY_KEY);
     }
     all
 }
@@ -566,6 +643,131 @@ unsafe fn apply(game: &Game, wanted: &Colors) {
     }
 }
 
+// ---- Allied Minimap Colors -------------------------------------------------------------------
+
+unsafe fn read8(at: *const u8) -> [u8; allied::SLOTS] {
+    // SAFETY (caller): eight readable bytes; [u8; 8] needs no alignment.
+    unsafe { core::ptr::read_volatile(at.cast::<[u8; allied::SLOTS]>()) }
+}
+
+/// Finds the minimap colour table next to `TeamColourRgba` and checks it before anything uses it:
+/// its stock copy must hold exactly the stock dots. On any other layout (another game build) the
+/// feature stays off and nothing is written.
+fn setup_minimap(table: usize) -> Result<(), String> {
+    let live = table
+        .checked_sub(MINIMAP_BEFORE_TABLE)
+        .ok_or("TeamColourRgba address too low")?;
+    // SAFETY: on build 1.0.2.2818 (the only build plugin.json accepts) this is the stock minimap
+    // table in the game's data section, a few kilobytes before TeamColourRgba; it is only read.
+    let found = unsafe { read8((live + MINIMAP_STOCK_AFTER_LIVE) as *const u8) };
+    if found != allied::STOCK {
+        return Err(format!(
+            "minimap color table not where build 1.0.2.2818 has it (found {found:02x?})"
+        ));
+    }
+    let need = |name: &str| lookup(name).ok_or_else(|| format!("symbol {name} not available"));
+    let m = Minimap {
+        live: live as *mut u8,
+        local: need("LocalPlayer")? as *const u8,
+        stance: need("DiplomacyStance")? as *const u8,
+        reorder: need("TeamColourReorder")? as *const u8,
+        chat_dialog: need("ChatDialog")? as *const *mut c_void,
+    };
+    let _ = MINIMAP.set(m);
+    Ok(())
+}
+
+/// Reads the Allied Minimap Colors settings (at load and after the options screen's Apply).
+fn load_allied() {
+    ALLIED.store(get_i64(allied::ENABLED_KEY) == 1, Ordering::Relaxed);
+    HOTKEY.store(
+        allied::hotkey(get_i64(allied::HOTKEY_KEY)).1,
+        Ordering::Relaxed,
+    );
+}
+
+/// Turns Allied Minimap Colors on or off and stores it, so the options screen shows it too.
+fn set_allied(on: bool) {
+    ALLIED.store(on, Ordering::Relaxed);
+    set_i64(allied::ENABLED_KEY, i64::from(on));
+    log(
+        W2R_LOG_INFO,
+        if on {
+            "Allied Minimap Colors on"
+        } else {
+            "Allied Minimap Colors off"
+        },
+    );
+}
+
+/// Whether the game window is the one in front (typing in another program does nothing).
+fn game_has_focus() -> bool {
+    // SAFETY: plain queries about the foreground window.
+    unsafe {
+        let window = GetForegroundWindow();
+        if window.is_null() {
+            return false;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(window, &mut pid);
+        pid == GetCurrentProcessId()
+    }
+}
+
+/// Makes the live minimap table match `on`: the allied colours, or the game's own once the plugin
+/// stops (only if it wrote them, so the game's table is never touched otherwise).
+unsafe fn apply_minimap(m: &Minimap, on: bool) {
+    unsafe {
+        let current = read8(m.live);
+        let reorder = read8(m.reorder);
+        let want = if on {
+            let local = *m.local;
+            if usize::from(local) < allied::SLOTS {
+                let row = read8(m.stance.add(usize::from(local) * allied::STANCE_STRIDE));
+                allied::allied_table(local, &row, &reorder, &current)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let next = match want {
+            Some(t) => {
+                MINIMAP_OWNED.store(true, Ordering::Relaxed);
+                t
+            }
+            None if MINIMAP_OWNED.swap(false, Ordering::Relaxed) => {
+                allied::stock_table(&reorder, &current)
+            }
+            None => return,
+        };
+        for (p, dot) in next.iter().enumerate() {
+            if current[p] != *dot {
+                *m.live.add(p) = *dot;
+            }
+        }
+    }
+}
+
+/// Once per frame in a match: the toggle key, then the minimap table.
+fn allied_tick() {
+    let Some(m) = MINIMAP.get() else { return };
+    let vk = HOTKEY.load(Ordering::Relaxed);
+    if vk != 0 {
+        // SAFETY: a plain key-state query; ChatDialog is the game's pointer to the open chat box.
+        let down = (unsafe { GetAsyncKeyState(vk) } as u16) & 0x8000 != 0;
+        let armed = game_has_focus() && unsafe { (*m.chat_dialog).is_null() };
+        let fire = KEY
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pressed(down, armed);
+        if fire {
+            set_allied(!ALLIED.load(Ordering::Relaxed));
+        }
+    }
+    unsafe { apply_minimap(m, ALLIED.load(Ordering::Relaxed)) };
+}
+
 unsafe extern "C" fn menu_buttons_detour(view: i32) {
     let original = ORIGINAL.load(Ordering::Acquire);
     if original != 0 {
@@ -576,6 +778,7 @@ unsafe extern "C" fn menu_buttons_detour(view: i32) {
         if let Some(game) = GAME.get() {
             unsafe { apply(game, &colors()) };
         }
+        allied_tick();
     }));
 }
 
@@ -836,6 +1039,44 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             choose(page, [None; PLAYERS]);
             page.status = "All colors back to the game's own".into();
         }
+
+        // Allied Minimap Colors.
+        if MINIMAP.get().is_some() {
+            let mut on = i32::from(ALLIED.load(Ordering::Relaxed));
+            if (ui.checkbox)(
+                ui.ctx,
+                s("Allied Minimap Colors (allies blue, enemies red)"),
+                &mut on,
+            ) != 0
+            {
+                set_allied(on != 0);
+            }
+            let (key, vk) = allied::hotkey(get_i64(allied::HOTKEY_KEY));
+            if vk == 0 {
+                label(ui, "Hotkey: none, use this box or Options > Unit Color.");
+            } else {
+                label(
+                    ui,
+                    &format!("Hotkey: {key} turns it on or off in a match (not while chatting)."),
+                );
+            }
+            if DECLARED.load(Ordering::Relaxed) {
+                label(
+                    ui,
+                    "Change the hotkey in Options > Unit Color > Allied Minimap Colors.",
+                );
+            }
+            label(
+                ui,
+                "Allied Minimap Colors: idea and method by Lambchops (BNE Allied Color).",
+            );
+        } else {
+            label(
+                ui,
+                "Allied Minimap Colors: not available on this game build (see the log).",
+            );
+        }
+
         if !page.status.is_empty() {
             label(ui, &page.status);
         }
@@ -873,6 +1114,7 @@ unsafe extern "C" fn on_event(event: *const W2rEvent) {
 /// made in the same visit (the screen cannot show a profile's colours until it is opened again);
 /// otherwise the colours are taken as edited and the dropdown is set to what they match.
 fn settings_changed() {
+    load_allied();
     let mut guard = PAGE.lock().unwrap_or_else(|e| e.into_inner());
     let page = guard.get_or_insert_with(new_page);
     let picked = stored_choice();
@@ -1002,6 +1244,11 @@ unsafe fn load(host: *const W2rHost) -> W2rStatus {
     // The stock colours first: they are the pickers' defaults and mean "no change".
     let stock = read_stock(game);
     *STOCK.lock().unwrap_or_else(|e| e.into_inner()) = stock;
+    // Allied Minimap Colors needs the minimap table; without it the rest still works.
+    match setup_minimap(table) {
+        Ok(()) => log(W2R_LOG_INFO, "Allied Minimap Colors ready"),
+        Err(e) => log(W2R_LOG_WARN, &format!("Allied Minimap Colors off: {e}")),
+    }
     // Reads (or creates) color_profiles.json now: the dropdown lists its profiles, and a broken
     // file shows in the log at start.
     let page = new_page();
@@ -1009,6 +1256,7 @@ unsafe fn load(host: *const W2rHost) -> W2rStatus {
     // Declarations are only accepted while on_load runs.
     DECLARED.store(declare(&stock, &page.profiles), Ordering::Relaxed);
     *LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner()) = stored_choice();
+    load_allied();
     let wanted = load_colors();
     // Rewrite anything stored in another form (`#RRGGBB` from 0.1.0) the way the picker stores it.
     set_colors(wanted);
@@ -1058,6 +1306,9 @@ unsafe extern "C" fn on_unload() {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if let Some(game) = GAME.get() {
             unsafe { apply(game, &[None; PLAYERS]) };
+        }
+        if let Some(m) = MINIMAP.get() {
+            unsafe { apply_minimap(m, false) };
         }
     }));
 }

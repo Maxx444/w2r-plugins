@@ -58,6 +58,70 @@ set a color.
 The colors are kept as `color1` .. `color8` (`rrggbb`) and the dropdown as `profile` in the
 plugin's settings.
 
+## Allied Minimap Colors (personal build)
+
+> This feature is in Maxx444's personal build (branch `personal/allied-minimap-colors` of
+> `Maxx444/w2r-plugins`), not in the version offered to hastinbe/w2r-plugins. It writes a game
+> table that has no host symbol (see "How it works"), which the upstream rules do not allow.
+
+Shows **allies in blue and enemies in red on the minimap**, so you can tell sides apart at a
+glance whatever colors the match handed out. Your own units keep their color. The units on the
+main map are not changed. It is **off by default**.
+
+**Credit:** the idea and the method come from **Lambchops**' *Allied Color* plugin
+(`allied_color.w2p`) for the Warcraft II Battle.net Edition Combat Edition. This is a new
+implementation for Remastered; none of that plugin's code is used (it was written for the old
+executable and cannot load in Remastered).
+
+### Turning it on and off
+
+- **Hotkey: F2** (by default) turns it on or off during a match. It only works while the game
+  window is in front and the chat box is closed, so typing F2 in chat or in another program does
+  nothing. Hold-to-repeat does not flicker it: one press, one toggle.
+- **Options > Unit Color > Allied Minimap Colors:** the **Allied Minimap Colors** checkbox, and
+  **Allied Minimap Colors Hotkey**, a dropdown with F2, F3, F4, F6, F7, F8, Insert, Home, End, or
+  **None (checkbox only)**. Pick another key if F2 clashes with something you use. The Combat
+  Edition plugin used Insert.
+- **The plugin's card** (title screen > Manage): the same checkbox, and a note with the current
+  hotkey.
+
+The hotkey, the checkbox and the options screen are one setting (`allied_minimap`, with the key in
+`allied_hotkey`): pressing F2 in a match also changes the checkbox, and it stays as you left it for
+the next match and the next start.
+
+The key is not taken away from the game: if the game or another plugin also uses the key, both
+react. (Not yet checked in game whether Remastered uses F2 for anything.)
+
+### What you see
+
+| Minimap dots of | With it on |
+|---|---|
+| You | Your own color (unchanged) |
+| Allied players | The stock blue dot |
+| Everyone else (enemies) | The stock red dot |
+
+- The red is the first entry of the red team ramp, so a custom **Player 1 (Red)** color also
+  changes the enemy dots. The blue is a shared palette entry and is always the stock blue.
+- "Allied" is your side of the game's diplomacy: a player you have set to allied. Change
+  alliances in the match and the minimap follows on the next frame.
+- Observers and replays: not tested. If the game gives no local player among the eight, it does
+  nothing; if it does, everyone not allied to that slot shows red. Turn it off there.
+
+### How it works
+
+Remastered still has the Battle.net Edition's eight-byte table of minimap dot colors, one per
+player, which the game fills from the players' colors when a match starts. With the feature on,
+every frame (the same tick as the color recolor) the plugin writes ally blue or enemy red into it
+from the alliance table (`DiplomacyStance`, row `LocalPlayer`), leaving your own entry alone.
+Turning it off, or unloading the plugin, writes each player's stock dot back.
+
+The table is not a host symbol. For game build 1.0.2.2818 it sits `0x8dc` bytes before
+`TeamColourRgba` (live table 0x008c8d64, stock copy 0x008c8d84, found in the game's minimap
+drawing code). At load the plugin checks that the stock copy holds exactly the stock dots
+(`d0 01 d8 dc e0 e4 ff 02`); if not, for example after a game update, the feature turns itself off,
+writes nothing, logs `Allied Minimap Colors off: ...`, and the card says it is not available. The
+rest of Unit Color still works.
+
 ## `color_profiles.json`
 
 In `plugins\w2r-unit-color\data\` inside your w2r folder
@@ -123,6 +187,9 @@ color at the start of a match.
 
 ## Capabilities
 
-- `game.read`: symbol lookup for `TeamColourRgba`, `RenderPalette` and `HudMenuButtons`.
+- `game.read`: symbol lookup for `TeamColourRgba`, `RenderPalette` and `HudMenuButtons`; for
+  Allied Minimap Colors also `LocalPlayer`, `DiplomacyStance`, `TeamColourReorder` and `ChatDialog`.
 - `hooks.raw`: one detour on `HudMenuButtons` (drawn every frame in a match; original called first)
-  as the per-frame tick, and direct writes to the two color tables. `affects_simulation` is false.
+  as the per-frame tick, and direct writes to the two color tables and, with Allied Minimap Colors
+  on, the minimap color table (found by offset, see above). `affects_simulation` is false: only
+  what your screen draws changes.
