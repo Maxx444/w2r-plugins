@@ -626,9 +626,12 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         if DECLARED.load(Ordering::Relaxed) {
             label(
                 ui,
-                "Colors and Color Profile: Options > Unit Color (its profile list is read at game start).",
+                "Also in Options > Unit Color: color pickers and the Color Profile list.",
             );
-        } else if edits {
+        }
+        // Text boxes until the host offers a color swatch for plugin cards. The options screen's
+        // pickers show a change made here the next time it opens.
+        if edits {
             for i in 0..PLAYERS {
                 let caption = format!(
                     "Player {} {} (#RRGGBB, empty = game default)",
