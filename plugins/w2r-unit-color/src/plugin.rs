@@ -41,7 +41,7 @@ const CATEGORY: &str = "Unit Color";
 /// The heading doubles as the notice that the swatches catch up on the next visit (the screen
 /// keeps its own copy of each value while it is open). At most 32 bytes.
 const PROFILE_SUBCATEGORY: &str = "Reopen the Menu to see APPLIED";
-const SAVE_SUBCATEGORY: &str = "Save Profile";
+const SAVE_SUBCATEGORY: &str = "Save or Delete Profile";
 // The host refuses a category or subcategory over 32 bytes, and with it the whole declaration.
 const _: () = assert!(
     CATEGORY.len() <= 32
@@ -90,6 +90,8 @@ struct Page {
     hex: [[u8; HEX_CAP]; PLAYERS],
     name: [u8; NAME_CAP],
     status: String,
+    /// The profile the card's Delete button is asking about ("are you sure?"), if any.
+    confirm_delete: Option<String>,
 }
 
 static GAME: OnceLock<Game> = OnceLock::new();
@@ -266,25 +268,42 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         .map(|p| p.name.clone())
         .collect();
 
-    // Saving from the options screen: a checkbox that makes the next Apply save, and the name it
-    // saves under (greyed while the box is off). The plugin clears the box after.
+    // Saving and deleting from the options screen: the profile's name, a checkbox that makes the
+    // next Apply save under it, and two that make it delete it (the second is the "are you sure",
+    // greyed until the first is checked). The plugin clears the boxes after.
+    let d = def(
+        W2R_SETTING_STRING,
+        model::NAME_KEY,
+        "Profile Name",
+        "The profile to save or delete. Choosing a profile fills it in the next time this screen opens.",
+        SAVE_SUBCATEGORY,
+    );
+    submit(&d, model::NAME_KEY);
     let d = def(
         W2R_SETTING_BOOL,
         model::SAVE_KEY,
         "Save Colors as Profile on Apply",
-        "Check, fill in a name, then press Apply: the colors below are saved to color_profiles.json, replacing a profile of the same name. A new name joins the Color Profile list at the next start.",
+        "Check, then press Apply: the colors below are saved to color_profiles.json under the name above, replacing a profile of the same name. A new name joins the Color Profile list at the next start.",
         SAVE_SUBCATEGORY,
     );
     submit(&d, model::SAVE_KEY);
-    let mut d = def(
-        W2R_SETTING_STRING,
-        model::NAME_KEY,
-        "Profile Name",
-        "The name the profile is saved under. Choosing a profile fills it in.",
+    let d = def(
+        W2R_SETTING_BOOL,
+        model::DELETE_KEY,
+        "Delete This Profile on Apply",
+        "Check, then also check Yes below and press Apply: the profile named above is removed from color_profiles.json. The colors in use stay. It leaves the Color Profile list at the next start.",
         SAVE_SUBCATEGORY,
     );
-    d.active_when = s(model::SAVE_KEY);
-    submit(&d, model::NAME_KEY);
+    submit(&d, model::DELETE_KEY);
+    let mut d = def(
+        W2R_SETTING_BOOL,
+        model::CONFIRM_KEY,
+        "Yes, Delete It (Cannot Be Undone)",
+        "Confirms the delete above. Without it, Apply deletes nothing.",
+        SAVE_SUBCATEGORY,
+    );
+    d.active_when = s(model::DELETE_KEY);
+    submit(&d, model::CONFIRM_KEY);
 
     for (i, rgb) in stock.iter().enumerate() {
         let key = model::key(i);
@@ -630,6 +649,7 @@ fn new_page() -> Page {
         hex: [[0; HEX_CAP]; PLAYERS],
         name: [0; NAME_CAP],
         status,
+        confirm_delete: None,
     };
     refill(&mut page, &colors());
     page
@@ -657,6 +677,37 @@ fn choose(page: &mut Page, c: Colors) {
     set_colors(c);
     refill(page, &c);
     sync_choice(&page.profiles);
+}
+
+/// Removes the profile named `name` from the file. The colours in use stay as they are.
+fn delete_named(page: &mut Page, name: &str) -> String {
+    let name = name.trim();
+    if name.is_empty() {
+        return "Nothing deleted: no profile name".into();
+    }
+    if !page.file_ok {
+        return format!("Not deleted: {PROFILES_FILE} could not be read; fix it, then Reload");
+    }
+    let mut next = page.profiles.clone();
+    let Some(gone) = profiles::remove(&mut next, name) else {
+        return format!("Nothing deleted: no profile named {name}");
+    };
+    if let Err(e) = save_profiles(&next) {
+        return format!("Not deleted: {e}");
+    }
+    page.profiles = next;
+    page.selected = page.selected.clamp(0, page.profiles.len() as i32);
+    fill_names(page);
+    sync_choice(&page.profiles);
+    // Do not offer the deleted name again in the options screen's name field.
+    if DECLARED.load(Ordering::Relaxed)
+        && get_str(model::NAME_KEY)
+            .trim()
+            .eq_ignore_ascii_case(&gone.name)
+    {
+        set_str(model::NAME_KEY, "");
+    }
+    format!("Deleted {} from {PROFILES_FILE}", gone.name)
 }
 
 /// Saves the colours in use as a profile named by the name box.
@@ -743,6 +794,7 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         page.selected = page.selected.clamp(0, last);
         if last > 0 && (ui.slider_int)(ui.ctx, s("Profile"), &mut page.selected, 0, last) != 0 {
             fill_names(page);
+            page.confirm_delete = None;
         }
         let title = selected(page).map_or_else(|| "Game default".to_string(), |p| p.name.clone());
         label(ui, &format!("Profile: {title}"));
@@ -764,11 +816,35 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             }
         }
 
+        // Delete the profile chosen with the slider, after an "are you sure".
+        match page.confirm_delete.clone() {
+            None => {
+                if button(ui, "Delete this profile") {
+                    match selected(page) {
+                        Some(p) => page.confirm_delete = Some(p.name.clone()),
+                        None => page.status = "Choose a profile with the slider first".into(),
+                    }
+                }
+            }
+            Some(name) => {
+                label(ui, &format!("Delete \"{name}\"? This cannot be undone."));
+                if button(ui, "Yes, delete it") {
+                    page.status = delete_named(page, &name);
+                    page.confirm_delete = None;
+                }
+                if button(ui, "No, keep it") {
+                    page.confirm_delete = None;
+                    page.status = format!("Kept {name}");
+                }
+            }
+        }
+
         if button(ui, &format!("Reload {PROFILES_FILE}")) {
             let loaded = load_profiles();
             page.profiles = loaded.profiles;
             page.file_ok = loaded.file_ok;
             page.status = loaded.note;
+            page.confirm_delete = None;
         }
         if button(ui, "Reset all to game default") {
             choose(page, [None; PLAYERS]);
@@ -850,12 +926,39 @@ fn settings_changed() {
         let n = p.name.clone();
         prefill_name(&n);
     }
-    if get_i64(model::SAVE_KEY) == 1 {
-        set_i64(model::SAVE_KEY, 0);
-        let name = get_str(model::NAME_KEY);
-        fill(&mut page.name, &name);
-        page.status = save_current(page);
-        log(W2R_LOG_INFO, &page.status);
+    let checked = |key| get_i64(key) == 1;
+    let (save, delete, yes) = (
+        checked(model::SAVE_KEY),
+        checked(model::DELETE_KEY),
+        checked(model::CONFIRM_KEY),
+    );
+    for (on, key) in [
+        (save, model::SAVE_KEY),
+        (delete, model::DELETE_KEY),
+        (yes, model::CONFIRM_KEY),
+    ] {
+        if on {
+            set_i64(key, 0);
+        }
+    }
+    let name = get_str(model::NAME_KEY);
+    let note = match model::profile_action(save, delete, yes) {
+        model::ProfileAction::None => None,
+        model::ProfileAction::Save => {
+            fill(&mut page.name, &name);
+            Some(save_current(page))
+        }
+        model::ProfileAction::Delete => Some(delete_named(page, &name)),
+        model::ProfileAction::DeleteNotConfirmed => {
+            Some("Nothing deleted: check \"Yes, Delete It\" as well".to_string())
+        }
+        model::ProfileAction::Both => {
+            Some("Save and Delete were both checked; nothing was done".to_string())
+        }
+    };
+    if let Some(note) = note {
+        log(W2R_LOG_INFO, &note);
+        page.status = note;
     }
     sync_choice(&page.profiles);
 }

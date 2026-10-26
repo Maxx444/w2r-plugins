@@ -161,6 +161,15 @@ fn to_value(p: &Profile) -> Value {
     ])
 }
 
+/// Takes the profile named `name` (ignoring case and surrounding spaces) out of `profiles`.
+pub fn remove(profiles: &mut Vec<Profile>, name: &str) -> Option<Profile> {
+    let name = name.trim();
+    let i = profiles
+        .iter()
+        .position(|p| p.name.eq_ignore_ascii_case(name))?;
+    Some(profiles.remove(i))
+}
+
 /// `profiles` with `p` added, or replacing the profile of the same name (ignoring case).
 pub fn upsert(profiles: &mut Vec<Profile>, p: Profile) -> Result<(), &'static str> {
     if let Some(old) = profiles
@@ -277,6 +286,20 @@ mod tests {
         let (p, w) = parse(&format!("[{}]", names.join(","))).unwrap();
         assert_eq!(p.len(), MAX_PROFILES);
         assert_eq!(w.len(), 3);
+    }
+
+    #[test]
+    fn remove_takes_one_profile_by_name() {
+        let mut list = default_profiles();
+        let n = list.len();
+        assert_eq!(
+            remove(&mut list, "  classic ").map(|p| p.name),
+            Some("Classic".into())
+        );
+        assert_eq!(list.len(), n - 1);
+        assert!(list.iter().all(|p| p.name != "Classic"));
+        assert_eq!(remove(&mut list, "Classic"), None);
+        assert_eq!(remove(&mut list, ""), None);
     }
 
     #[test]

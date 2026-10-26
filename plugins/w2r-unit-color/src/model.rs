@@ -100,6 +100,33 @@ pub const PROFILE_KEY: &str = "profile";
 /// name it saves under.
 pub const SAVE_KEY: &str = "save_profile";
 pub const NAME_KEY: &str = "profile_name";
+/// Settings keys of the options screen's delete: the checkbox that asks for it, and the second one
+/// that confirms it. Apply deletes only when both are checked.
+pub const DELETE_KEY: &str = "delete_profile";
+pub const CONFIRM_KEY: &str = "delete_profile_confirm";
+
+/// What Apply on the options screen does with the save and delete checkboxes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileAction {
+    None,
+    Save,
+    Delete,
+    /// Delete was checked without "Yes, Delete It".
+    DeleteNotConfirmed,
+    /// Save and Delete were both checked: nothing is done.
+    Both,
+}
+
+pub fn profile_action(save: bool, delete: bool, confirmed: bool) -> ProfileAction {
+    match (save, delete, confirmed) {
+        (true, true, _) => ProfileAction::Both,
+        (true, false, _) => ProfileAction::Save,
+        (false, true, true) => ProfileAction::Delete,
+        (false, true, false) => ProfileAction::DeleteNotConfirmed,
+        // "Yes" alone does nothing.
+        (false, false, _) => ProfileAction::None,
+    }
+}
 
 /// The dropdown's labels for `profiles`: their names, cut to the host's 64 bytes.
 pub fn choice_labels(profiles: &[Profile]) -> Vec<String> {
@@ -343,6 +370,17 @@ mod tests {
     fn stock_falls_back_when_unread() {
         assert_eq!(stock_or_default([[0; 3]; PLAYERS]), REMASTERED);
         assert_eq!(stock_or_default(CLASSIC), CLASSIC);
+    }
+
+    #[test]
+    fn delete_needs_both_boxes_and_never_mixes_with_save() {
+        use ProfileAction::*;
+        assert_eq!(profile_action(false, false, false), None);
+        assert_eq!(profile_action(false, false, true), None);
+        assert_eq!(profile_action(true, false, false), Save);
+        assert_eq!(profile_action(false, true, false), DeleteNotConfirmed);
+        assert_eq!(profile_action(false, true, true), Delete);
+        assert_eq!(profile_action(true, true, true), Both);
     }
 
     #[test]
