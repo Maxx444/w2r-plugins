@@ -5,14 +5,15 @@
 //! settings. Panics are caught before they unwind into the game (detours are outside the host's
 //! crash guard, docs/abi.md).
 //!
-//! The settings page edits the colours (one box per colour) and the profiles kept in
-//! `color_profiles.ini`, imports warcraft2.site presets from `presets.json` and exports
-//! `export.json`. All three files live in the plugin's own data folder, the only folder a plugin
-//! can write (docs/abi.md, `data_open`).
+//! On a host with declared settings, the eight colours are colour pickers on the options screen
+//! (Accessibility > Unit Colors). The plugin's card in the plugin manager picks, saves and reloads
+//! the profiles in `color_profiles.ini`, which lives in the plugin's own data folder, the only
+//! folder a plugin can write (docs/abi.md, `data_open`). On an older host the card also has one
+//! text box per colour.
 
 use core::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use w2r_abi::*;
@@ -25,15 +26,17 @@ const PALETTE_STRIDE: usize = 4;
 /// Floats per HD colour table entry (RGBA).
 const TABLE_STRIDE: usize = 4;
 
-/// The profiles file, the warcraft2.site preset file read on Import, and the file Export writes.
+/// The profiles file in the plugin's data folder.
 const PROFILES_FILE: &str = "color_profiles.ini";
-const IMPORT_FILE: &str = "presets.json";
-const EXPORT_FILE: &str = "export.json";
 /// Largest file read (64 full profiles are about 20 KiB).
 const MAX_FILE: usize = 1 << 20;
 /// Edit buffers: `#RRGGBB` plus room for stray spaces; a profile name or author.
 const HEX_CAP: usize = 16;
 const NAME_CAP: usize = model::MAX_NAME + 1;
+
+/// Where the colour pickers appear on the options screen.
+const CATEGORY: &str = "Accessibility";
+const SUBCATEGORY: &str = "Unit Colors";
 
 type MenuButtonsFn = unsafe extern "C" fn(i32);
 
@@ -63,14 +66,12 @@ const EMPTY_SLOT: Slot = Slot {
     owns_ramp: false,
 };
 
-/// The settings page.
+/// The plugin's card in the plugin manager.
 struct Page {
     /// The profiles in `color_profiles.ini`, in file order.
     profiles: Vec<Profile>,
     /// Slider position: 0 is "Game default", n is `profiles[n - 1]`.
     selected: i32,
-    /// The profile last applied, shown at the top; empty once a colour is edited by hand.
-    active: String,
     hex: [[u8; HEX_CAP]; PLAYERS],
     name: [u8; NAME_CAP],
     author: [u8; NAME_CAP],
@@ -81,8 +82,12 @@ static GAME: OnceLock<Game> = OnceLock::new();
 static HOST: AtomicPtr<W2rHost> = AtomicPtr::new(core::ptr::null_mut());
 static ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 static HOOK: Mutex<Option<W2rHandle>> = Mutex::new(None);
-/// The wanted colours; read by the tick, written by the page.
+/// The wanted colours (`None`: the game's own); read by the tick, written by the page and events.
 static COLORS: Mutex<Colors> = Mutex::new([None; PLAYERS]);
+/// The game's own colours, read from the HD table before anything was written.
+static STOCK: Mutex<[Rgb; PLAYERS]> = Mutex::new(model::REMASTERED);
+/// Whether the options screen shows the colour pickers (the host took the declarations).
+static DECLARED: AtomicBool = AtomicBool::new(false);
 static SLOTS: Mutex<[Slot; PLAYERS]> = Mutex::new([EMPTY_SLOT; PLAYERS]);
 static PAGE: Mutex<Option<Page>> = Mutex::new(None);
 
@@ -120,6 +125,10 @@ fn colors() -> Colors {
     *COLORS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+fn stock() -> [Rgb; PLAYERS] {
+    *STOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 // ---- settings --------------------------------------------------------------------------------
 
 /// The value under `key`, or empty when it is missing or unreadable.
@@ -152,30 +161,78 @@ fn set_str(key: &str, value: &str) {
     }
 }
 
-/// The colours in the settings; a value the user mangled by hand counts as "game default".
+/// The colours in the settings. A value equal to the game's own colour, or one mangled by hand,
+/// means "the game's own".
 fn load_colors() -> Colors {
+    let stock = stock();
     let mut out = [None; PLAYERS];
     for (i, c) in out.iter_mut().enumerate() {
-        *c = model::parse_entry(&get_str(&model::key(i))).unwrap_or(None);
+        *c = model::wanted(&get_str(&model::key(i)), stock[i]);
     }
     out
 }
 
-/// Makes `next` the wanted colours, saving the ones that changed.
-fn set_colors(next: Colors) {
-    let mut cur = COLORS.lock().unwrap_or_else(|e| e.into_inner());
-    for i in 0..PLAYERS {
-        if cur[i] != next[i] {
-            set_str(
-                &model::key(i),
-                &next[i].map(model::to_hex).unwrap_or_default(),
-            );
-        }
+/// Stores colour `i` the way the options screen's picker does (`rrggbb`; the game's own colour
+/// is stored as itself, so the picker shows it).
+fn save_one(i: usize, c: Option<Rgb>) {
+    let value = model::to_setting(c.unwrap_or(stock()[i]));
+    if get_str(&model::key(i)) != value {
+        set_str(&model::key(i), &value);
     }
-    *cur = next;
 }
 
-// ---- data files ------------------------------------------------------------------------------
+/// Makes `next` the wanted colours and stores them.
+fn set_colors(next: Colors) {
+    for (i, c) in next.iter().enumerate() {
+        save_one(i, *c);
+    }
+    *COLORS.lock().unwrap_or_else(|e| e.into_inner()) = next;
+}
+
+/// Declares the eight colour pickers for the options screen; false on an older host or if the
+/// host refused one (it logs which).
+fn declare(stock: &[Rgb; PLAYERS]) -> bool {
+    let Some(h) = host() else { return false };
+    if h.struct_size < W2R_HOST_SETTINGS_DECLARE_SIZE {
+        return false;
+    }
+    let mut all = true;
+    for (i, rgb) in stock.iter().enumerate() {
+        let key = model::key(i);
+        let label = format!("Player {} ({})", i + 1, model::NAMES[i]);
+        let description = format!(
+            "The {} team color on your screen only. Pick the game's own color to leave it unchanged.",
+            model::NAMES[i]
+        );
+        let default = model::to_setting(*rgb);
+        let def = W2rSettingDef {
+            struct_size: W2R_SETTING_DEF_V1_SIZE,
+            kind: W2R_SETTING_COLOR,
+            default_int: 0,
+            min: 0,
+            max: 0,
+            flags: 0,
+            choice_count: 0,
+            choices: core::ptr::null(),
+            reserved: 0,
+            key: s(&key),
+            label: s(&label),
+            description: s(&description),
+            category: s(CATEGORY),
+            subcategory: s(SUBCATEGORY),
+            default_str: s(&default),
+            active_when: s(""),
+        };
+        let st = unsafe { (h.settings_declare)(h.token, &def) };
+        if st != W2R_OK {
+            log(W2R_LOG_WARN, &format!("declaring {key}: status {st}"));
+            all = false;
+        }
+    }
+    all
+}
+
+// ---- the profiles file -----------------------------------------------------------------------
 
 /// `Ok(None)` when the file does not exist.
 fn read_file(name: &str) -> Result<Option<String>, String> {
@@ -274,24 +331,18 @@ fn save_profiles(profiles: &[Profile]) -> Result<(), String> {
     write_file(PROFILES_FILE, &ini::write(profiles))
 }
 
-/// The colour on screen for each index: the chosen one, or the game's own.
-fn shown() -> [Rgb; PLAYERS] {
-    let wanted = colors();
-    let slots = *SLOTS.lock().unwrap_or_else(|e| e.into_inner());
-    let mut out = model::REMASTERED;
-    for i in 0..PLAYERS {
-        out[i] = match (wanted[i], slots[i].stock_table, GAME.get()) {
-            (Some(rgb), _, _) => rgb,
-            (None, Some(stock), _) => model::rgb_of([stock[0], stock[1], stock[2]]),
-            // Never touched, so the live entry is the game's own.
-            (None, None, Some(game)) => unsafe {
-                let t = game.table.add(i * TABLE_STRIDE);
-                model::rgb_of([*t, *t.add(1), *t.add(2)])
-            },
-            (None, None, None) => model::REMASTERED[i],
+/// Reads the game's own colours from the HD table. Called in `on_load`, before the tick has
+/// written anything.
+fn read_stock(game: &Game) -> [Rgb; PLAYERS] {
+    let mut out = [[0u8; 3]; PLAYERS];
+    for (i, rgb) in out.iter_mut().enumerate() {
+        // SAFETY: the table holds four floats for each of the eight colour indices.
+        *rgb = unsafe {
+            let t = game.table.add(i * TABLE_STRIDE);
+            model::rgb_of([*t, *t.add(1), *t.add(2)])
         };
     }
-    out
+    model::stock_or_default(out)
 }
 
 // ---- the tick --------------------------------------------------------------------------------
@@ -387,7 +438,7 @@ unsafe extern "C" fn menu_buttons_detour(view: i32) {
     }));
 }
 
-// ---- the settings page -----------------------------------------------------------------------
+// ---- the plugin manager card -----------------------------------------------------------------
 
 fn fill(buf: &mut [u8], text: &str) {
     buf.fill(0);
@@ -400,11 +451,16 @@ fn text_of(buf: &[u8]) -> String {
     String::from_utf8_lossy(&buf[..n]).into_owned()
 }
 
-/// Shows `c` in the colour boxes (after a profile, an import or a reset).
+/// Shows `c` in the colour boxes (older hosts only draw them).
 fn refill(page: &mut Page, c: &Colors) {
     for (buf, rgb) in page.hex.iter_mut().zip(c) {
         fill(buf, &rgb.map(model::to_hex).unwrap_or_default());
     }
+}
+
+fn selected(page: &Page) -> Option<&Profile> {
+    let i = usize::try_from(page.selected).ok()?.checked_sub(1)?;
+    page.profiles.get(i)
 }
 
 /// Puts the selected profile's name and author in their boxes, ready to save over it.
@@ -417,15 +473,16 @@ fn fill_names(page: &mut Page) {
     fill(&mut page.author, &author);
 }
 
-fn selected(page: &Page) -> Option<&Profile> {
-    let i = usize::try_from(page.selected).ok()?.checked_sub(1)?;
-    page.profiles.get(i)
-}
-
-/// Remembers which profile is in use (empty: none, the colours were edited by hand).
-fn set_active(page: &mut Page, title: String) {
-    set_str(model::PROFILE_KEY, &title);
-    page.active = title;
+/// What the "In use" line says: Game default, the matching profile, or Custom colors.
+fn in_use(page: &Page) -> String {
+    let cur = colors();
+    if cur == [None; PLAYERS] {
+        return "Game default".into();
+    }
+    match model::matching(&page.profiles, &cur, &stock()) {
+        Some(p) => model::title(p),
+        None => "Custom colors".into(),
+    }
 }
 
 fn new_page() -> Page {
@@ -433,7 +490,6 @@ fn new_page() -> Page {
     let mut page = Page {
         profiles,
         selected: 0,
-        active: model::clean_name(&get_str(model::PROFILE_KEY), ""),
         hex: [[0; HEX_CAP]; PLAYERS],
         name: [0; NAME_CAP],
         author: [0; NAME_CAP],
@@ -460,14 +516,13 @@ unsafe fn button(ui: &W2rUi, text: &str) -> bool {
     unsafe { (ui.button)(ui.ctx, s(text)) != 0 }
 }
 
-/// Applies colours chosen on the page and shows them in the boxes.
-fn choose(page: &mut Page, c: Colors, title: String) {
+/// Applies colours chosen on the card and shows them in the boxes.
+fn choose(page: &mut Page, c: Colors) {
     set_colors(c);
     refill(page, &c);
-    set_active(page, title);
 }
 
-/// Saves the colours on screen as a profile named by the name and author boxes.
+/// Saves the colours in use as a profile named by the name and author boxes.
 fn save_current(page: &mut Page) -> String {
     let name = model::clean_name(&text_of(&page.name), "");
     if name.is_empty() {
@@ -490,60 +545,21 @@ fn save_current(page: &mut Page) -> String {
     if let Some(i) = page.profiles.iter().position(|o| o.name == name) {
         page.selected = i as i32 + 1;
     }
-    set_active(page, title.clone());
     format!("Saved {title} to {PROFILES_FILE}")
-}
-
-/// Adds the presets in `presets.json` to the profiles (same name: replaced) and saves the file.
-fn import(page: &mut Page) -> String {
-    let list = match read_file(IMPORT_FILE) {
-        Ok(Some(text)) => match model::profiles_from_json(&text) {
-            Ok(list) => list,
-            Err(e) => return format!("{IMPORT_FILE}: {e}"),
-        },
-        Ok(None) => return format!("Put {IMPORT_FILE} in the plugin's data folder first"),
-        Err(e) => return e,
-    };
-    let mut next = page.profiles.clone();
-    let mut added = 0;
-    for p in list {
-        if ini::upsert(&mut next, p).is_ok() {
-            added += 1;
-        }
-    }
-    if let Err(e) = save_profiles(&next) {
-        return format!("Not imported: {e}");
-    }
-    page.profiles = next;
-    format!("Imported {added} preset(s) into {PROFILES_FILE}")
-}
-
-fn export(page: &Page) -> String {
-    let name = model::clean_name(&text_of(&page.name), "Exported colors");
-    let author = model::clean_name(&text_of(&page.author), "");
-    match write_file(EXPORT_FILE, &model::export_json(&name, &author, &shown())) {
-        Ok(()) => format!("Wrote {EXPORT_FILE} to the plugin's data folder"),
-        Err(e) => e,
-    }
 }
 
 unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
     let edits = ui.struct_size >= W2R_UI_TEXT_EDIT_SIZE;
     unsafe {
-        label(
-            ui,
-            "Team colors on your screen only; nobody else sees them.",
-        );
-        let in_use = if !page.active.is_empty() {
-            page.active.clone()
-        } else if colors() == [None; PLAYERS] {
-            "Game default".into()
-        } else {
-            "Custom colors".into()
-        };
-        label(ui, &format!("In use: {in_use}"));
+        // The host draws plain text only, so the line is set apart by its shape.
+        label(ui, &format!(">>  IN USE:  {}  <<", in_use(page)));
 
-        if edits {
+        if DECLARED.load(Ordering::Relaxed) {
+            label(
+                ui,
+                "Edit each color in Options > Accessibility > Unit Colors.",
+            );
+        } else if edits {
             for i in 0..PLAYERS {
                 let caption = format!(
                     "Player {} {} (#RRGGBB, empty = game default)",
@@ -557,7 +573,6 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
                             let mut next = colors();
                             next[i] = c;
                             set_colors(next);
-                            set_active(page, String::new());
                             page.status.clear();
                         }
                         Err(model::NotAColor) => {
@@ -573,17 +588,18 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             );
         }
 
-        // Profiles: 0 is the game's own colours, then color_profiles.ini in file order.
+        // Profiles: 0 is the game's own colours, then color_profiles.ini in file order. Reload
+        // re-reads the file, so edits show here at once.
         let last = page.profiles.len() as i32;
         page.selected = page.selected.clamp(0, last);
         if last > 0 && (ui.slider_int)(ui.ctx, s("Profile"), &mut page.selected, 0, last) != 0 {
             fill_names(page);
         }
         let title = selected(page).map_or_else(|| "Game default".to_string(), model::title);
-        label(ui, &title);
+        label(ui, &format!("Profile: {title}"));
         if button(ui, "Apply profile") {
             let c = selected(page).map_or([None; PLAYERS], |p| p.colors);
-            choose(page, c, title.clone());
+            choose(page, c);
             page.status = format!("Applied {title}");
         }
 
@@ -602,14 +618,8 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             page.profiles = profiles;
             page.status = note;
         }
-        if button(ui, "Import presets.json (warcraft2.site) into profiles") {
-            page.status = import(page);
-        }
-        if button(ui, "Export current colors to export.json") {
-            page.status = export(page);
-        }
         if button(ui, "Reset all to game default") {
-            choose(page, [None; PLAYERS], String::new());
+            choose(page, [None; PLAYERS]);
             page.status = "All colors back to the game's own".into();
         }
         if !page.status.is_empty() {
@@ -617,7 +627,7 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         }
         label(
             ui,
-            "Files: plugins\\w2r-unit-color\\data\\ in your w2r folder.",
+            "File: plugins\\w2r-unit-color\\data\\color_profiles.ini in your w2r folder.",
         );
     }
 }
@@ -633,6 +643,7 @@ unsafe extern "C" fn on_ui(ui: *const W2rUi) {
     }));
 }
 
+/// The options screen stored new colours (Apply or Save and Exit).
 unsafe extern "C" fn on_event(event: *const W2rEvent) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         let Some(event) = (unsafe { event.as_ref() }) else {
@@ -640,13 +651,8 @@ unsafe extern "C" fn on_event(event: *const W2rEvent) {
         };
         if event.id == W2R_EVT_SETTINGS_CHANGED {
             let next = load_colors();
-            let changed = {
-                let mut cur = COLORS.lock().unwrap_or_else(|e| e.into_inner());
-                let changed = *cur != next;
-                *cur = next;
-                changed
-            };
-            if changed && let Some(page) = PAGE.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            *COLORS.lock().unwrap_or_else(|e| e.into_inner()) = next;
+            if let Some(page) = PAGE.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
                 refill(page, &next);
             }
         }
@@ -675,11 +681,18 @@ unsafe fn load(host: *const W2rHost) -> W2rStatus {
         );
         return W2R_E_STATE;
     };
-    let _ = GAME.set(Game {
+    let game = GAME.get_or_init(|| Game {
         table: table as *mut f32,
         palette: palette as *const *mut u8,
     });
-    *COLORS.lock().unwrap_or_else(|e| e.into_inner()) = load_colors();
+    // The stock colours first: they are the pickers' defaults and mean "no change".
+    let stock = read_stock(game);
+    *STOCK.lock().unwrap_or_else(|e| e.into_inner()) = stock;
+    // Declarations are only accepted while on_load runs.
+    DECLARED.store(declare(&stock), Ordering::Relaxed);
+    let wanted = load_colors();
+    // Rewrite anything stored in another form (`#RRGGBB` from 0.1.0) the way the picker stores it.
+    set_colors(wanted);
     // Reads (or creates) color_profiles.ini now, so a broken file shows in the log at start.
     let page = new_page();
     log(W2R_LOG_INFO, &page.status);

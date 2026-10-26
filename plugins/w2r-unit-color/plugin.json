@@ -4,7 +4,7 @@
   "name": "Unit Color",
   "version": "0.1.0",
   "author": "Beau Hastings",
-  "description": "Recolors any of the eight team colors on your screen only (units, color boxes, most minimap dots). Named color profiles with authors in color_profiles.ini; imports and exports warcraft2.site presets. Replaces Black Recolor.",
+  "description": "Recolors any of the eight team colors on your screen only (units, color boxes, most minimap dots), with color pickers in Options and named color profiles with authors in color_profiles.ini. Replaces Black Recolor.",
   "entry": "w2r_unit_color.dll",
   "abi": 1,
   "game_builds": ["1.0.2.2818"],

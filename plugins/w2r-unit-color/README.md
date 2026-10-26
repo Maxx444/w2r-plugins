@@ -9,38 +9,39 @@ plugin, which this one replaces.
 second one to load fails (the log says `hook_install returned` with a conflict). Black Recolor's
 pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cyan" profile.
 
-## Settings page
+## Settings
+
+**Options > Accessibility > Unit Colors** (W2R Mod Loader with the options screen): one color
+picker per team color, `Player 1 (Red)` .. `Player 8 (Yellow)`. Each shows a swatch and its hex
+value; the button opens the color editor with the new and the current color side by side. Applied
+with the screen's Apply or Save and Exit. Picking the game's own color means no change for that
+team.
+
+**The plugin's card** (title screen > Manage):
 
 | Row | What it does |
 |---|---|
-| `In use` | The profile last applied, with its author, or "Custom colors" once you edit a color. |
-| `Player 1 Red` .. `Player 8 Yellow` | `#RRGGBB` for that team color; empty means the game's own color. A box applies as soon as it holds a valid color. |
-| `Profile` + `Apply profile` | Game default, then every profile in `color_profiles.ini`, shown as "name by author". |
-| `Profile name`, `Author`, `Save current colors as this profile` | Saves the colors on screen into `color_profiles.ini`, replacing a profile of the same name. Moving the slider fills both boxes with that profile's name and author. |
-| `Reload color_profiles.ini` | Reads the file again after you edit it by hand. |
-| `Import presets.json (warcraft2.site) into profiles` | Adds the presets in `presets.json` as profiles (same name: replaced). |
-| `Export current colors to export.json` | Writes the colors on screen, all eight written out, as a warcraft2.site preset, using the name and author boxes. |
+| `>> IN USE: ... <<` | The profile whose colors are in use ("name by author"), "Game default", or "Custom colors". |
+| `Profile` + `Apply profile` | Game default, then every profile in `color_profiles.ini`. |
+| `Profile name`, `Author`, `Save current colors as this profile` | Saves the colors in use into `color_profiles.ini`, replacing a profile of the same name. Moving the slider fills both boxes with that profile's name and author. |
+| `Reload color_profiles.ini` | Reads the file again after you edit it; new and changed profiles show at once, no restart. |
 | `Reset all to game default` | Clears every color. |
 
-The colors in use are kept as `color1` .. `color8` in the plugin's settings.
+On an older W2R Mod Loader without the options screen, the card also has one `#RRGGBB` box per
+team color instead of the pickers.
 
-The color, name and author boxes need a w2r whose plugin UI has edit boxes; on an older one only
-the slider and the buttons are shown.
+The colors are kept as `color1` .. `color8` in the plugin's settings (`rrggbb`).
 
-## Files
+## `color_profiles.ini`
 
-All three files are in `plugins\w2r-unit-color\data\` inside your w2r folder
+In `plugins\w2r-unit-color\data\` inside your w2r folder
 (`%USERPROFILE%\Saved Games\Warcraft2Remastered\w2r\`). That is the only folder the plugin API lets a
-plugin read or write; it never sees a path.
-
-### `color_profiles.ini`
-
-Created with four profiles (Remastered, Classic, Black to pink, Black to cyan) the first time the
-plugin loads. Edit it freely, then press Reload.
+plugin read or write; it never sees a path. Created with four profiles (Remastered, Classic, Black
+to pink, Black to cyan) the first time the plugin loads.
 
 ```ini
 [Classic Colors + Black 2 Pink]
-author = Maxx444#2154
+author = Maxx444
 player1 = #A40000 ; Red
 player2 = #003CC0 ; Blue
 player3 = #2CB494 ; Teal
@@ -57,20 +58,9 @@ player8 = #FCFC48 ; Yellow
 - Lines starting with `;` or `#` are comments, and `;` after a color starts a comment. Other keys
   are ignored.
 - A second profile with the same name (ignoring case), a bad color or a line that is not
-  `key = value` is skipped; the rest of the file still loads, and the page and the log say which
+  `key = value` is skipped; the rest of the file still loads, and the card and the log say which
   line. At most 64 profiles and 1 MiB are read.
-- Saving from the page rewrites the whole file in this layout, so comments you added are lost.
-
-### `presets.json` and `export.json`
-
-`presets.json` may hold one preset as shared on
-[warcraft2.site](https://warcraft2.site/color-presets) and by W2 Toolkit
-(`{"name", "author", "colors": {"players": [{"player": 1, "color": "#A40000"}, ...]}}`), an array
-of them, the site's listing (`{"items": [...]}`), or just the `colors` object. Fields the plugin
-cannot apply (HP and mana bars, selection and resource highlights) are ignored.
-
-`export.json` has the same shape, players only. Whether W2 Toolkit accepts a file without the bar
-and highlight fields has not been checked.
+- Saving from the card rewrites the whole file in this layout, so comments you added are lost.
 
 ## What changes, and what does not
 

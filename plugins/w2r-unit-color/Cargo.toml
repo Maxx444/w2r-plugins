@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-description = "Custom colors for all eight teams on your screen, with color profiles you can share"
+description = "Custom colors for all eight teams on your screen, with color pickers and shareable color profiles"
 
 [lib]
 name = "w2r_unit_color"
