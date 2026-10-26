@@ -103,6 +103,11 @@ pub const MAX_LISTED: usize = MAX_CHOICES - 2;
 const MAX_CHOICE_LABEL: usize = 64;
 /// Settings key of the dropdown (an index).
 pub const PROFILE_KEY: &str = "profile";
+/// Settings keys of the options screen's save fields: the checkbox that makes Apply save, and the
+/// name and author it saves under.
+pub const SAVE_KEY: &str = "save_profile";
+pub const NAME_KEY: &str = "profile_name";
+pub const AUTHOR_KEY: &str = "profile_author";
 
 /// The dropdown's labels for `profiles` ("name by author", cut to the host's 64 bytes).
 pub fn choice_labels(profiles: &[Profile]) -> Vec<String> {
