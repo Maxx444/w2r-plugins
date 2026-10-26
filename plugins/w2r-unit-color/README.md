@@ -13,19 +13,18 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
 
 **Options > Unit Color** (needs a W2R Mod Loader with the options screen):
 
-- **Reopen the Menu to see APPLIED > Color Profile:** a dropdown with **Custom** and **Game
-  default**, then the profiles in `color_profiles.json` by name, as they were when the game
-  started. Choose one and press Apply. It shows the profile whose colors are in use, or Custom once
-  you change a color by hand.
-  - **The dropdown lists up to 14 profiles** (the host allows 16 entries, and Custom and Game
-    default take two). The four profiles the plugin starts with count toward the 14. Profiles after
-    the 14th stay in the file and can be applied from the plugin card; the file holds up to 64.
-- **Save or Delete Profile:**
-  - **Profile Name:** the profile to save or delete. Choosing a profile fills it in the next time
-    the screen opens.
+- **Profiles:**
+  - **Color Profile:** a dropdown with **Custom** and **Game default**, then the profiles in
+    `color_profiles.json` by name, as they were when the game started. Choose one and press Apply.
+    It shows the profile whose colors are in use, or Custom once you change a color by hand.
+    **It lists up to 14 profiles** (the host allows 16 entries, and Custom and Game default take
+    two). The four profiles the plugin starts with count toward the 14. Profiles after the 14th
+    stay in the file and can be applied from the plugin card; the file holds up to 64.
+  - **Save or Delete Profile Name:** the profile the boxes below save or delete. Applying a profile
+    fills in its name.
   - **Save Colors as Profile on Apply:** check it and press Apply: the colors below are saved under
-    that name, replacing a profile of the same name. Editing a profile is: choose it, Apply, reopen,
-    change colors, check Save, Apply.
+    that name, replacing a profile of the same name. Editing a profile is: choose it, Apply, change
+    colors, check Save, Apply.
   - **Delete This Profile on Apply** and **Yes, Delete It (Cannot Be Undone):** check both and press
     Apply to remove the profile named above. Delete alone does nothing (the "Yes" box is greyed
     until it is checked), and Save with Delete does nothing either. The colors in use are not
@@ -36,9 +35,10 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
   shows a swatch and its hex value; the button opens the color editor with the new and the current
   color side by side. Picking the game's own color means no change for that team.
 
-The screen keeps its own copy of every value while it is open, so after choosing a profile and
-pressing Apply the swatches show its colors only the next time you open Options; the heading
-above the dropdown says so. If you change the dropdown and a picker in the same visit, the profile wins.
+After Apply the screen shows what the plugin changed (a chosen profile's colors in the pickers, its
+name, the cleared boxes). On a W2R Mod Loader that does not refresh the screen after Apply yet,
+those show the next time you open Options, and only one profile can be deleted per visit. If you
+change the dropdown and a picker in the same visit, the profile wins.
 
 **The plugin's card** (title screen > Manage), for what the options screen cannot do:
 
@@ -62,9 +62,8 @@ plugin's settings.
 
 In `plugins\w2r-unit-color\data\` inside your w2r folder
 (`%USERPROFILE%\Saved Games\Warcraft2Remastered\w2r\`). That is the only folder the plugin API lets a
-plugin read or write; it never sees a path. Created the first time the plugin loads: from an older
-`color_profiles.ini` if there is one (that file is then no longer used), otherwise with four
-profiles (Remastered, Classic, Black to pink, Black to cyan).
+plugin read or write; it never sees a path. Created the first time the plugin loads, with four profiles
+(Remastered, Classic, Black to pink, Black to cyan).
 
 Each profile is a warcraft2.site / W2 Toolkit preset with a name:
 

@@ -19,7 +19,7 @@ use std::sync::{Mutex, OnceLock};
 use w2r_abi::*;
 
 use crate::model::{self, Colors, PLAYERS, Profile, RAMP, Rgb};
-use crate::{ini, profiles};
+use crate::profiles;
 
 /// Bytes per render palette entry (RGBA).
 const PALETTE_STRIDE: usize = 4;
@@ -28,8 +28,6 @@ const TABLE_STRIDE: usize = 4;
 
 /// The profiles file in the plugin's data folder.
 const PROFILES_FILE: &str = "color_profiles.json";
-/// The file earlier test builds wrote; converted once when only it exists.
-const OLD_PROFILES_FILE: &str = "color_profiles.ini";
 /// Largest file read (64 full profiles are about 20 KiB).
 const MAX_FILE: usize = 1 << 20;
 /// Edit buffers: `#RRGGBB` plus room for stray spaces; a profile name.
@@ -38,17 +36,12 @@ const NAME_CAP: usize = model::MAX_NAME + 1;
 
 /// Where the colour pickers appear on the options screen.
 const CATEGORY: &str = "Unit Color";
-/// The heading doubles as the notice that the swatches catch up on the next visit (the screen
-/// keeps its own copy of each value while it is open). At most 32 bytes.
-const PROFILE_SUBCATEGORY: &str = "Reopen the Menu to see APPLIED";
-const SAVE_SUBCATEGORY: &str = "Save or Delete Profile";
+/// The heading over the profile dropdown and the save and delete rows (the screen draws one over
+/// every group of rows, so it cannot be left out). At most 32 bytes.
+const PROFILE_SUBCATEGORY: &str = "Profiles";
 // The host refuses a category or subcategory over 32 bytes, and with it the whole declaration.
-const _: () = assert!(
-    CATEGORY.len() <= 32
-        && PROFILE_SUBCATEGORY.len() <= 32
-        && SAVE_SUBCATEGORY.len() <= 32
-        && SUBCATEGORY.len() <= 32
-);
+const _: () =
+    assert!(CATEGORY.len() <= 32 && PROFILE_SUBCATEGORY.len() <= 32 && SUBCATEGORY.len() <= 32);
 const SUBCATEGORY: &str = "Player Colors";
 
 type MenuButtonsFn = unsafe extern "C" fn(i32);
@@ -255,7 +248,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         W2R_SETTING_CHOICE,
         model::PROFILE_KEY,
         "Color Profile",
-        "Choose a profile and press Apply. The swatches below show its colors the next time you open this screen. The list is read when the game starts.",
+        "Choose a profile and press Apply to use its colors. The list is read when the game starts.",
         PROFILE_SUBCATEGORY,
     );
     d.default_int = model::CHOICE_GAME_DEFAULT;
@@ -274,9 +267,9 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
     let d = def(
         W2R_SETTING_STRING,
         model::NAME_KEY,
-        "Profile Name",
-        "The profile to save or delete. Choosing a profile fills it in the next time this screen opens.",
-        SAVE_SUBCATEGORY,
+        "Save or Delete Profile Name",
+        "The profile the boxes below save or delete. Applying a profile fills in its name.",
+        PROFILE_SUBCATEGORY,
     );
     submit(&d, model::NAME_KEY);
     let d = def(
@@ -284,7 +277,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         model::SAVE_KEY,
         "Save Colors as Profile on Apply",
         "Check, then press Apply: the colors below are saved to color_profiles.json under the name above, replacing a profile of the same name. A new name joins the Color Profile list at the next start.",
-        SAVE_SUBCATEGORY,
+        PROFILE_SUBCATEGORY,
     );
     submit(&d, model::SAVE_KEY);
     let d = def(
@@ -292,7 +285,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         model::DELETE_KEY,
         "Delete This Profile on Apply",
         "Check, then also check Yes below and press Apply: the profile named above is removed from color_profiles.json. The colors in use stay. It leaves the Color Profile list at the next start.",
-        SAVE_SUBCATEGORY,
+        PROFILE_SUBCATEGORY,
     );
     submit(&d, model::DELETE_KEY);
     let mut d = def(
@@ -300,7 +293,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         model::CONFIRM_KEY,
         "Yes, Delete It (Cannot Be Undone)",
         "Confirms the delete above. Without it, Apply deletes nothing.",
-        SAVE_SUBCATEGORY,
+        PROFILE_SUBCATEGORY,
     );
     d.active_when = s(model::DELETE_KEY);
     submit(&d, model::CONFIRM_KEY);
@@ -417,8 +410,7 @@ struct Loaded {
     file_ok: bool,
 }
 
-/// Reads `color_profiles.json`. The first time, it is created from the old `color_profiles.ini`
-/// if that exists, and from the default profiles otherwise.
+/// Reads `color_profiles.json`, creating it with the default profiles the first time.
 fn load_profiles() -> Loaded {
     match read_file(PROFILES_FILE) {
         Ok(Some(text)) => match profiles::parse(&text) {
@@ -456,15 +448,9 @@ fn load_profiles() -> Loaded {
             }
         },
         Ok(None) => {
-            let (profiles, from) = match read_file(OLD_PROFILES_FILE) {
-                Ok(Some(text)) => (ini::parse(&text).0, format!("from {OLD_PROFILES_FILE}")),
-                _ => (
-                    model::default_profiles(),
-                    "with the default profiles".to_string(),
-                ),
-            };
+            let profiles = model::default_profiles();
             let note = match save_profiles(&profiles) {
-                Ok(()) => format!("Created {PROFILES_FILE} {from} ({})", profiles.len()),
+                Ok(()) => format!("Created {PROFILES_FILE} with {} profiles", profiles.len()),
                 Err(e) => e,
             };
             Loaded {
