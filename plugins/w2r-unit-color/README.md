@@ -90,6 +90,10 @@ color at the start of a match.
 - **Not changed:** Yellow has no ramp of its own (`0xec`.. holds the gold mine highlight), and the
   minimap dots of Blue, White and Yellow use shared palette entries (1, 255 and 2) that other
   things use too, so those stay stock. The War_2_Remastered_Mods color tool has the same limits.
+- **Score screen:** the colored cells after a match come from the game's skin file
+  (`fe_endgame_stats_bar_0` .. `_7` in `Data\skins\skins.json`), not from the color table, and a
+  plugin can neither edit game files nor reach those skins in memory. They stay stock until the
+  W2R Mod Loader offers a way (requested from the maintainer).
 - **Restores:** choosing Game default, or unloading the plugin, writes the stock values back. The
   settings are kept.
 
