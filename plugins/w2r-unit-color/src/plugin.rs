@@ -36,7 +36,10 @@ const NAME_CAP: usize = model::MAX_NAME + 1;
 
 /// Where the colour pickers appear on the options screen.
 const CATEGORY: &str = "Unit Color";
-const PROFILE_SUBCATEGORY: &str = "Profile";
+/// The heading doubles as the notice that the swatches catch up on the next visit (the screen
+/// keeps its own copy of each value while it is open). At most 32 bytes.
+const PROFILE_SUBCATEGORY: &str = "Profile (Reopen to See Colors)";
+const SAVE_SUBCATEGORY: &str = "Save Profile";
 const SUBCATEGORY: &str = "Player Colors";
 
 type MenuButtonsFn = unsafe extern "C" fn(i32);
@@ -240,7 +243,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         W2R_SETTING_CHOICE,
         model::PROFILE_KEY,
         "Color Profile",
-        "Applies a profile from color_profiles.ini. The list is read when the game starts.",
+        "Choose a profile and press Apply. The swatches below show its colors the next time you open this screen. The list is read when the game starts.",
         PROFILE_SUBCATEGORY,
     );
     d.default_int = model::CHOICE_GAME_DEFAULT;
@@ -252,6 +255,35 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         .take(model::MAX_LISTED)
         .map(|p| p.name.clone())
         .collect();
+
+    // Saving from the options screen: a checkbox that makes the next Apply save, and the name and
+    // author it saves under (greyed while the box is off). The plugin clears the box after.
+    let d = def(
+        W2R_SETTING_BOOL,
+        model::SAVE_KEY,
+        "Save Colors as Profile on Apply",
+        "Check, fill in a name, then press Apply: the colors below are saved to color_profiles.ini, replacing a profile of the same name. A new name joins the Color Profile list at the next start.",
+        SAVE_SUBCATEGORY,
+    );
+    submit(&d, model::SAVE_KEY);
+    let mut d = def(
+        W2R_SETTING_STRING,
+        model::NAME_KEY,
+        "Profile Name",
+        "The name the profile is saved under. Choosing a profile fills it in.",
+        SAVE_SUBCATEGORY,
+    );
+    d.active_when = s(model::SAVE_KEY);
+    submit(&d, model::NAME_KEY);
+    let mut d = def(
+        W2R_SETTING_STRING,
+        model::AUTHOR_KEY,
+        "Author",
+        "Who made the profile; shown next to its name. Optional.",
+        SAVE_SUBCATEGORY,
+    );
+    d.active_when = s(model::SAVE_KEY);
+    submit(&d, model::AUTHOR_KEY);
 
     for (i, rgb) in stock.iter().enumerate() {
         let key = model::key(i);
@@ -602,6 +634,7 @@ fn save_current(page: &mut Page) -> String {
         colors: colors(),
     };
     let title = model::title(&p);
+    let (p_name, p_author) = (p.name.clone(), p.author.clone());
     let mut next = page.profiles.clone();
     if let Err(e) = ini::upsert(&mut next, p) {
         return format!("Not saved: {e}");
@@ -614,6 +647,7 @@ fn save_current(page: &mut Page) -> String {
         page.selected = i as i32 + 1;
     }
     sync_choice(&page.profiles);
+    prefill_names(&p_name, &p_author);
     format!("Saved {title} to {PROFILES_FILE}")
 }
 
@@ -672,6 +706,10 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         label(ui, &format!("Profile: {title}"));
         if button(ui, "Apply profile") {
             let c = selected(page).map_or([None; PLAYERS], |p| p.colors);
+            if let Some(p) = selected(page) {
+                let (n, a) = (p.name.clone(), p.author.clone());
+                prefill_names(&n, &a);
+            }
             choose(page, c);
             page.status = format!("Applied {title}");
         }
@@ -762,7 +800,50 @@ fn settings_changed() {
     *LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner()) = picked;
     set_colors(next);
     refill(page, &next);
+    if let Some(Some(name)) = profile
+        && let Some(p) = page
+            .profiles
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+    {
+        let (n, a) = (p.name.clone(), p.author.clone());
+        prefill_names(&n, &a);
+    }
+    if get_i64(model::SAVE_KEY) == 1 {
+        set_i64(model::SAVE_KEY, 0);
+        let name = get_str(model::NAME_KEY);
+        let author = get_str(model::AUTHOR_KEY);
+        fill(&mut page.name, &name);
+        fill(&mut page.author, &author);
+        page.status = save_current(page);
+        log(W2R_LOG_INFO, &page.status);
+    }
     sync_choice(&page.profiles);
+}
+
+/// Puts a profile's name and author in the options screen's save fields (shown on the next
+/// visit), so editing a profile is: choose it, reopen, change colors, check Save, Apply.
+fn prefill_names(name: &str, author: &str) {
+    if !DECLARED.load(Ordering::Relaxed) {
+        return;
+    }
+    set_str(model::NAME_KEY, name);
+    set_str(model::AUTHOR_KEY, author);
+}
+
+fn get_i64(key: &str) -> i64 {
+    let Some(h) = host() else { return 0 };
+    let mut v = 0i64;
+    if unsafe { (h.settings_get_i64)(h.token, s(key), &mut v) } != W2R_OK {
+        return 0;
+    }
+    v
+}
+
+fn set_i64(key: &str, value: i64) {
+    if let Some(h) = host() {
+        unsafe { (h.settings_set_i64)(h.token, s(key), value) };
+    }
 }
 
 // ---- load and unload -------------------------------------------------------------------------

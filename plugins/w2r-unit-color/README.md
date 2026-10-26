@@ -13,16 +13,22 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
 
 **Options > Unit Color** (needs a W2R Mod Loader with the options screen):
 
-- **Profile > Color Profile:** a dropdown with Custom, Game default, then the profiles in
-  `color_profiles.ini` (up to 14) as they were when the game started. Choose one and press Apply.
-  It shows the profile whose colors are in use, or Custom once you change a color by hand.
+- **Profile (Reopen to See Colors) > Color Profile:** a dropdown with Custom, Game default, then the
+  profiles in `color_profiles.ini` (up to 14) as they were when the game started. Choose one and
+  press Apply. It shows the profile whose colors are in use, or Custom once you change a color by
+  hand.
+- **Save Profile:** check **Save Colors as Profile on Apply**, fill in **Profile Name** (and
+  **Author** if you like), then press Apply: the colors below are saved to `color_profiles.ini`,
+  replacing a profile of the same name, and the box clears itself. Choosing a profile fills in its
+  name and author, so editing one is: choose it, Apply, reopen, change colors, check Save, Apply.
+  A new name joins the dropdown at the next start (the card's list has it at once).
 - **Player Colors:** one color picker per team color, `Player 1 (Red)` .. `Player 8 (Yellow)`. Each
   shows a swatch and its hex value; the button opens the color editor with the new and the current
   color side by side. Picking the game's own color means no change for that team.
 
-Choosing a profile and pressing Apply changes the colors, but the pickers show them only the next
-time you open the screen (the screen does not let a plugin change a row while it is open). If you
-change the dropdown and a picker in the same visit, the profile wins.
+The screen keeps its own copy of every value while it is open, so after choosing a profile and
+pressing Apply the swatches show its colors only the next time you open Options; the Profile
+heading says so. If you change the dropdown and a picker in the same visit, the profile wins.
 
 **The plugin's card** (title screen > Manage), for what the options screen cannot do:
 
