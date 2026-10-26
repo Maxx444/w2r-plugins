@@ -1,7 +1,5 @@
-//! Pure recolor rules: the eight team colours, colour profiles and warcraft2.site preset files.
-//! No host calls, so everything here is tested on any machine. Ramp shading follows wc2r-plus `recolour.cpp`.
-
-use crate::json::{self, Value};
+//! Pure recolor rules: the eight team colours, colour profiles, and what the settings store. No
+//! host calls, so everything here is tested on any machine. Ramp shading follows wc2r-plus `recolour.cpp`.
 
 /// An sRGB colour.
 pub type Rgb = [u8; 3];
@@ -27,9 +25,6 @@ pub const NAMES: [&str; PLAYERS] = [
 pub fn key(i: usize) -> String {
     format!("color{}", i + 1)
 }
-
-/// Settings key holding the name of the profile last applied (empty once a colour is edited).
-pub const PROFILE_KEY: &str = "profile";
 
 /// wc2r-plus's Black2Pink and Black2Cyan.
 pub const PINK: Rgb = [0xe8, 0x7b, 0xdd];
@@ -126,6 +121,51 @@ pub fn parse_entry(text: &str) -> Result<Option<Rgb>, NotAColor> {
     parse_hex(t).map(Some).ok_or(NotAColor)
 }
 
+/// The settings value for a colour: six lowercase hex digits, the format the options screen's
+/// colour picker stores (`W2R_SETTING_COLOR`).
+pub fn to_setting(rgb: Rgb) -> String {
+    format!("{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2])
+}
+
+/// What a stored colour means: `None` (the game's own) when it is empty, unreadable, or equal to
+/// the game's own colour `stock`, so picking the stock colour in the picker is "no override".
+pub fn wanted(stored: &str, stock: Rgb) -> Option<Rgb> {
+    parse_entry(stored)
+        .ok()
+        .flatten()
+        .filter(|rgb| *rgb != stock)
+}
+
+/// The first profile whose colours are what is in use, treating a colour equal to the game's own
+/// as unset on both sides. `None`: no profile matches (custom colours).
+pub fn matching<'a>(
+    profiles: &'a [Profile],
+    cur: &Colors,
+    stock: &[Rgb; PLAYERS],
+) -> Option<&'a Profile> {
+    let norm = |c: &Colors| -> Colors {
+        let mut out = *c;
+        for (o, s) in out.iter_mut().zip(stock) {
+            if *o == Some(*s) {
+                *o = None;
+            }
+        }
+        out
+    };
+    let cur = norm(cur);
+    profiles.iter().find(|p| norm(&p.colors) == cur)
+}
+
+/// The stock colours as read from the game, or the Remastered values when the read looks wrong
+/// (all black, as an uninitialised table would be).
+pub fn stock_or_default(read: [Rgb; PLAYERS]) -> [Rgb; PLAYERS] {
+    if read.iter().all(|c| *c == [0, 0, 0]) {
+        REMASTERED
+    } else {
+        read
+    }
+}
+
 /// Most profiles kept from one file; the rest are ignored.
 pub const MAX_PROFILES: usize = 64;
 /// Longest profile name or author kept (in characters); longer ones are cut.
@@ -150,92 +190,6 @@ pub fn clean_name(name: &str, fallback: &str) -> String {
     } else {
         cleaned.to_string()
     }
-}
-
-/// The colours of one preset's `colors` object (or of the object itself when it has `players`).
-/// `players` is either `[{"player": 1, "color": "#A60000"}, ...]` (warcraft2.site and W2
-/// Toolkit) or eight colour strings. Unknown fields (bars, highlights) are ignored.
-fn colors_of(v: &Value) -> Option<Colors> {
-    let players = v
-        .get("players")
-        .or_else(|| v.get("colors").and_then(|c| c.get("players")))?
-        .as_array()?;
-    let mut out = [None; PLAYERS];
-    let mut any = false;
-    for (n, entry) in players.iter().enumerate() {
-        let (slot, color) = match entry {
-            Value::Str(s) => (n, s.as_str()),
-            Value::Obj(_) => {
-                let p = entry.get("player")?.as_f64()?;
-                if p.fract() != 0.0 || !(1.0..=PLAYERS as f64).contains(&p) {
-                    return None;
-                }
-                (p as usize - 1, entry.get("color")?.as_str()?)
-            }
-            _ => return None,
-        };
-        if slot >= PLAYERS {
-            return None;
-        }
-        out[slot] = Some(parse_hex(color)?);
-        any = true;
-    }
-    any.then_some(out)
-}
-
-/// Every preset in a warcraft2.site / W2 Toolkit preset file, as profiles. Accepted shapes: one
-/// preset (`{"name", "author", "colors": {...}}`), a bare `colors` object, an array of presets, or
-/// a listing `{"items": [...]}` (the site's API). Entries that are not presets are skipped; a file
-/// with none gives `Err`.
-pub fn profiles_from_json(text: &str) -> Result<Vec<Profile>, &'static str> {
-    let doc = json::parse(text).ok_or("not valid JSON")?;
-    let items: Vec<&Value> = match (&doc, doc.get("items")) {
-        (Value::Arr(items), _) => items.iter().collect(),
-        (_, Some(Value::Arr(items))) => items.iter().collect(),
-        _ => vec![&doc],
-    };
-    let mut out = Vec::new();
-    for (n, item) in items.into_iter().enumerate() {
-        if out.len() == MAX_PROFILES {
-            break;
-        }
-        if let Some(colors) = colors_of(item) {
-            let fallback = format!("Imported {}", n + 1);
-            let text = |k| item.get(k).and_then(Value::as_str).unwrap_or("");
-            out.push(Profile {
-                name: clean_name(text("name"), &fallback),
-                author: clean_name(text("author"), ""),
-                colors,
-            });
-        }
-    }
-    if out.is_empty() {
-        Err("no presets with player colors found")
-    } else {
-        Ok(out)
-    }
-}
-
-/// One preset as JSON in the warcraft2.site / W2 Toolkit shape (players only), with every colour
-/// written out: `shown[i]` is the colour on screen for colour index `i`.
-pub fn export_json(name: &str, author: &str, shown: &[Rgb; PLAYERS]) -> String {
-    let players: Vec<String> = shown
-        .iter()
-        .enumerate()
-        .map(|(i, rgb)| {
-            format!(
-                "      {{ \"color\": \"{}\", \"player\": {} }}",
-                to_hex(*rgb),
-                i + 1
-            )
-        })
-        .collect();
-    format!(
-        "{{\n  \"name\": {},\n  \"author\": {},\n  \"colors\": {{\n    \"players\": [\n{}\n    ]\n  }}\n}}\n",
-        json::quote(name),
-        json::quote(author),
-        players.join(",\n")
-    )
 }
 
 /// Render palette entry where colour `i`'s ramp starts, if it has one of its own. Red to white
@@ -316,50 +270,44 @@ mod tests {
         assert_eq!(title(&anon), "X");
     }
 
-    /// One entry of the warcraft2.site API listing, trimmed (shape as served on 2026-10-25).
-    const SITE: &str = r##"{"items":[{"id":"x","name":"Classic Colors + Black 2 Pink","colors":{
-        "manaBar":"#3470A4","players":[{"color":"#A40000","player":1},{"color":"#003CC0","player":2},
-        {"color":"#2CB494","player":3},{"color":"#9848B0","player":4},{"color":"#F08414","player":5},
-        {"color":"#FF00FF","player":6},{"color":"#E0E0E0","player":7},{"color":"#FCFC48","player":8}],
-        "allyHighlight":"#FFFF00"},"author":"a","installCount":0},
-        {"id":"y","name":"no colors here"}],"hasMore":false}"##;
-
     #[test]
-    fn reads_the_site_listing() {
-        let p = profiles_from_json(SITE).unwrap();
-        assert_eq!(p.len(), 1);
-        assert_eq!(p[0].name, "Classic Colors + Black 2 Pink");
-        assert_eq!(p[0].author, "a");
-        let mut want = CLASSIC.map(Some);
-        want[BLACK] = Some([0xff, 0, 0xff]);
-        assert_eq!(p[0].colors, want);
+    fn settings_values() {
+        assert_eq!(to_setting([0xa4, 0, 0x3c]), "a4003c");
+        assert_eq!(parse_entry("a4003c"), Ok(Some([0xa4, 0, 0x3c])));
+        let stock = REMASTERED[0];
+        assert_eq!(wanted("", stock), None);
+        assert_eq!(wanted("junk", stock), None);
+        assert_eq!(wanted(&to_setting(stock), stock), None);
+        assert_eq!(wanted("#A40000", stock), Some([0xa4, 0, 0]));
     }
 
     #[test]
-    fn reads_other_shapes() {
-        let bare = r##"{"players":["#010203","#040506"]}"##;
-        let p = profiles_from_json(bare).unwrap();
-        assert_eq!(p[0].name, "Imported 1");
-        assert_eq!(p[0].colors[1], Some([4, 5, 6]));
-        assert_eq!(p[0].colors[2], None);
-
-        let arr = r##"[{"name":"A","colors":{"players":[{"player":8,"color":"FFFF00"}]}}]"##;
-        let p = profiles_from_json(arr).unwrap();
-        assert_eq!(p[0].colors[7], Some([255, 255, 0]));
+    fn finds_the_profile_in_use() {
+        let profiles = default_profiles();
+        let stock = REMASTERED;
+        // The Remastered profile spells out the stock colours, so it matches "all unset".
+        assert_eq!(
+            matching(&profiles, &[None; PLAYERS], &stock).map(|p| p.name.as_str()),
+            Some("Remastered")
+        );
+        assert_eq!(
+            matching(&profiles, &CLASSIC.map(Some), &stock).map(|p| p.name.as_str()),
+            Some("Classic")
+        );
+        let mut pink = [None; PLAYERS];
+        pink[BLACK] = Some(PINK);
+        assert_eq!(
+            matching(&profiles, &pink, &stock).map(|p| p.name.as_str()),
+            Some("Black to pink")
+        );
+        pink[0] = Some([1, 2, 3]);
+        assert_eq!(matching(&profiles, &pink, &stock), None);
     }
 
     #[test]
-    fn refuses_bad_presets() {
-        assert!(profiles_from_json("nope").is_err());
-        assert!(profiles_from_json("{}").is_err());
-        for bad in [
-            r##"{"players":[{"player":9,"color":"#000000"}]}"##,
-            r##"{"players":[{"player":1.5,"color":"#000000"}]}"##,
-            r##"{"players":[{"player":1,"color":"black"}]}"##,
-            r##"{"players":["#000000","#000000","#000000","#000000","#000000","#000000","#000000","#000000","#000000"]}"##,
-        ] {
-            assert!(profiles_from_json(bad).is_err(), "{bad}");
-        }
+    fn stock_falls_back_when_unread() {
+        assert_eq!(stock_or_default([[0; 3]; PLAYERS]), REMASTERED);
+        assert_eq!(stock_or_default(CLASSIC), CLASSIC);
     }
 
     #[test]
@@ -368,22 +316,6 @@ mod tests {
         assert_eq!(clean_name("", "f"), "f");
         assert_eq!(clean_name("é\n", "f"), "??");
         assert_eq!(clean_name(&"x".repeat(100), "f").len(), MAX_NAME);
-    }
-
-    #[test]
-    fn caps_the_number_of_presets() {
-        let one = r##"{"players":["#000000"]}"##;
-        let many = format!("[{}]", vec![one; MAX_PROFILES + 5].join(","));
-        assert_eq!(profiles_from_json(&many).unwrap().len(), MAX_PROFILES);
-    }
-
-    #[test]
-    fn export_reimports() {
-        let text = export_json("My \"set\"", "me", &REMASTERED);
-        let p = profiles_from_json(&text).unwrap();
-        assert_eq!(p[0].name, "My \"set\"");
-        assert_eq!(p[0].author, "me");
-        assert_eq!(p[0].colors, REMASTERED.map(Some));
     }
 
     #[test]
