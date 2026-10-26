@@ -70,22 +70,41 @@ type MenuButtonsFn = unsafe extern "C" fn(i32);
 /// Maxx444's personal W2R Mod Loader (branch personal/card-color-swatches, after
 /// hastinbe/w2r-mod-loader#3); the w2r-abi this workspace pins predates it.
 type ColorEditFn = unsafe extern "C" fn(*mut c_void, W2rStr, *mut u8) -> i32;
+/// `W2rUi.combo`, appended after `color_edit` by the same loader: a caption and a dropdown of
+/// `count` choices (2 to 16, at most 64 bytes each) showing `*selected`; 1 when the player picked
+/// a different entry.
+type ComboFn = unsafe extern "C" fn(*mut c_void, W2rStr, *const W2rStr, u32, *mut i32) -> i32;
 
-/// `W2rUi` as far as `color_edit`.
+/// `W2rUi` with the personal loader's appended fields.
 #[repr(C)]
-struct UiWithColor {
+struct UiExt {
     base: W2rUi,
     color_edit: ColorEditFn,
+    combo: ComboFn,
+}
+
+/// Whether the host's widget table reaches the end of the field at `offset`.
+fn ui_has(ui: &W2rUi, offset: usize) -> bool {
+    ui.struct_size as usize >= offset + core::mem::size_of::<usize>()
 }
 
 /// The host's `color_edit`, when its widget table is long enough to have one.
 fn color_edit_of(ui: &W2rUi) -> Option<ColorEditFn> {
-    if (ui.struct_size as usize) < core::mem::size_of::<UiWithColor>() {
+    if !ui_has(ui, core::mem::offset_of!(UiExt, color_edit)) {
         return None;
     }
     // SAFETY: the host says its table is at least this long, and the field is appended after the
     // ones `W2rUi` declares.
-    Some(unsafe { (*(ui as *const W2rUi).cast::<UiWithColor>()).color_edit })
+    Some(unsafe { (*(ui as *const W2rUi).cast::<UiExt>()).color_edit })
+}
+
+/// The host's `combo`, when its widget table is long enough to have one.
+fn combo_of(ui: &W2rUi) -> Option<ComboFn> {
+    if !ui_has(ui, core::mem::offset_of!(UiExt, combo)) {
+        return None;
+    }
+    // SAFETY: as in `color_edit_of`.
+    Some(unsafe { (*(ui as *const W2rUi).cast::<UiExt>()).combo })
 }
 
 /// What Allied Minimap Colors reads and writes.
@@ -1033,6 +1052,15 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             );
         }
 
+        // The Color Profile dropdown, as in Options > Unit Color (Custom, Game default, then the
+        // first profiles in color_profiles.json), but live: it lists the file as it is now, shows
+        // the profile in use, and a pick applies at once. Above the slider for now.
+        if let Some(combo) = combo_of(ui) {
+            if let Some(note) = profile_dropdown(ui, combo, page) {
+                page.status = note;
+            }
+        }
+
         // Profiles: 0 is the game's own colours, then color_profiles.json in file order. Reload
         // re-reads the file, so edits show here at once.
         let last = page.profiles.len() as i32;
@@ -1136,6 +1164,58 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             ui,
             "File: plugins\\w2r-unit-color\\data\\color_profiles.json in your w2r folder.",
         );
+    }
+}
+
+/// Draws the card's Color Profile dropdown and applies a pick: Game default, or a profile's colors
+/// (the swatches, the boxes, the In Use line, the slider and the name fields follow at once). The
+/// status line to show, if something was applied.
+unsafe fn profile_dropdown(ui: &W2rUi, combo: ComboFn, page: &mut Page) -> Option<String> {
+    let listed: Vec<String> = page
+        .profiles
+        .iter()
+        .take(model::MAX_LISTED)
+        .map(|p| p.name.clone())
+        .collect();
+    let labels = model::choice_labels(&page.profiles);
+    let strs: Vec<W2rStr> = labels.iter().map(|l| s(l)).collect();
+    let cur = colors();
+    let matched = model::matching(&page.profiles, &cur, &stock()).map(|p| p.name.clone());
+    let mut sel = model::choice_for(&listed, cur == [None; PLAYERS], matched.as_deref()) as i32;
+    let picked = unsafe {
+        combo(
+            ui.ctx,
+            s("Color Profile"),
+            strs.as_ptr(),
+            strs.len() as u32,
+            &mut sel,
+        )
+    };
+    if picked == 0 {
+        return None;
+    }
+    page.confirm_delete = None;
+    match model::choice_target(&listed, i64::from(sel)) {
+        Some(None) => {
+            choose(page, [None; PLAYERS]);
+            page.selected = 0;
+            fill_names(page);
+            Some("Applied Game default".into())
+        }
+        Some(Some(name)) => {
+            let i = page
+                .profiles
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(name))?;
+            let p = page.profiles[i].clone();
+            page.selected = i as i32 + 1;
+            fill_names(page);
+            prefill_name(&p.name);
+            choose(page, p.colors);
+            Some(format!("Applied {}", p.name))
+        }
+        // Custom: there is nothing to apply.
+        None => None,
     }
 }
 
