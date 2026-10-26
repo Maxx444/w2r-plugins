@@ -30,7 +30,7 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
     `color_profiles.json` by name, as they were when the game started. Choose one and press Apply.
     It shows the profile whose colors are in use, or Custom once you change a color by hand.
     **It lists up to 14 profiles** (the host allows 16 entries, and Custom and Game default take
-    two). The four profiles the plugin starts with count toward the 14. Profiles after the 14th
+    two). The six profiles the plugin starts with count toward the 14. Profiles after the 14th
     stay in the file and can be applied from the plugin card; the file holds up to 64.
   - **Save or Delete Profile Name:** the profile the boxes below save or delete. Applying a profile
     fills in its name.
@@ -143,8 +143,8 @@ rest of Unit Color still works.
 
 In `plugins\w2r-unit-color\data\` inside your w2r folder
 (`%USERPROFILE%\Saved Games\Warcraft2Remastered\w2r\`). That is the only folder the plugin API lets a
-plugin read or write; it never sees a path. Created the first time the plugin loads, with four profiles
-(Remastered, Classic, Black to pink, Black to cyan).
+plugin read or write; it never sees a path. Created the first time the plugin loads, with six profiles
+(Classic, Remastered, Black to pink, Black to cyan, Maxx444's + Pink, Maxx444's + Cyan).
 
 Each profile is a warcraft2.site / W2 Toolkit preset with a name:
 

@@ -29,6 +29,10 @@ pub fn key(i: usize) -> String {
 /// wc2r-plus's Black2Pink and Black2Cyan.
 pub const PINK: Rgb = [0xe8, 0x7b, 0xdd];
 pub const CYAN: Rgb = [0x00, 0xc6, 0xe0];
+/// The pink of the built-in pink profiles (as in Maxx444's color_profiles.json).
+pub const MAGENTA: Rgb = [0xff, 0x00, 0xff];
+/// The violet of Maxx444's profiles.
+pub const MAXX_VIOLET: Rgb = [0x64, 0x32, 0x96];
 
 /// Classic Warcraft II colours (the DOS / Battle.net Edition palette).
 pub const CLASSIC: [Rgb; PLAYERS] = [
@@ -77,11 +81,21 @@ pub fn default_profiles() -> Vec<Profile> {
         colors,
         extra: Vec::new(),
     };
+    // Maxx444's: classic blue and a deeper violet, with black as pink or cyan.
+    let maxx = |rgb| {
+        let mut c = [None; PLAYERS];
+        c[1] = Some(CLASSIC[1]);
+        c[3] = Some(MAXX_VIOLET);
+        c[BLACK] = Some(rgb);
+        c
+    };
     vec![
-        p("Remastered", all(REMASTERED)),
         p("Classic", all(CLASSIC)),
-        p("Black to pink", black(PINK)),
+        p("Remastered", all(REMASTERED)),
+        p("Black to pink", black(MAGENTA)),
         p("Black to cyan", black(CYAN)),
+        p("Maxx444's + Pink", maxx(MAGENTA)),
+        p("Maxx444's + Cyan", maxx(CYAN)),
     ]
 }
 
@@ -337,8 +351,9 @@ mod tests {
     fn defaults_are_sane() {
         let d = default_profiles();
         assert!(d.iter().all(|p| p.name.len() <= MAX_NAME));
-        assert_eq!(d[1].name, "Classic");
-        assert_eq!(d[2].colors[BLACK], Some(PINK));
+        assert_eq!(d[0].name, "Classic");
+        assert_eq!(d.len(), 6);
+        assert_eq!(d[2].colors[BLACK], Some(MAGENTA));
         assert_eq!(d[2].colors.iter().filter(|c| c.is_some()).count(), 1);
     }
 
@@ -367,7 +382,7 @@ mod tests {
             Some("Classic")
         );
         let mut pink = [None; PLAYERS];
-        pink[BLACK] = Some(PINK);
+        pink[BLACK] = Some(MAGENTA);
         assert_eq!(
             matching(&profiles, &pink, &stock).map(|p| p.name.as_str()),
             Some("Black to pink")
@@ -404,7 +419,7 @@ mod tests {
         let labels = choice_labels(&d);
         assert_eq!(labels[0], "Custom");
         assert_eq!(labels[1], "Game default");
-        assert_eq!(labels[3], "Classic");
+        assert_eq!(labels[2], "Classic");
         assert!(labels.iter().all(|l| l.len() <= 64 && !l.is_empty()));
         let many: Vec<Profile> = (0..30)
             .map(|i| Profile {

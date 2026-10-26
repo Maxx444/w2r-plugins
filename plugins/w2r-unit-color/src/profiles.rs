@@ -231,7 +231,7 @@ mod tests {
         let (back, warnings) = parse(&text).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(back, profiles);
-        assert!(text.starts_with("{\n  \"profiles\": [\n    {\n      \"name\": \"Remastered\","));
+        assert!(text.starts_with("{\n  \"profiles\": [\n    {\n      \"name\": \"Classic\","));
         // Black to pink lists black only; the rest keep the game's colors.
         let pink = &back[2];
         assert_eq!(pink.colors.iter().filter(|c| c.is_some()).count(), 1);
@@ -286,6 +286,13 @@ mod tests {
         let (p, w) = parse(&format!("[{}]", names.join(","))).unwrap();
         assert_eq!(p.len(), MAX_PROFILES);
         assert_eq!(w.len(), 3);
+    }
+
+    #[test]
+    fn a_new_file_is_maxx444s_color_profiles_json() {
+        // Byte for byte the file Maxx444 uses (2026-10-26), so a fresh install starts with it.
+        let expected = include_str!("../tests/color_profiles.json");
+        assert_eq!(write(&default_profiles()), expected);
     }
 
     #[test]
