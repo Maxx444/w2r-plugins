@@ -1,12 +1,11 @@
 //! `color_profiles.json`: the player's color profiles, in the warcraft2.site / W2 Toolkit preset
-//! shape with a name and an author:
+//! shape with a name:
 //!
 //! ```json
 //! {
 //!   "profiles": [
 //!     {
 //!       "name": "Classic Colors + Black 2 Pink",
-//!       "author": "Maxx444",
 //!       "colors": {
 //!         "players": [
 //!           { "player": 1, "color": "#A40000" },
@@ -20,9 +19,10 @@
 //! ```
 //!
 //! A player left out keeps the game's own color. The `colors` object's other fields (highlights,
-//! bars) are not applied, but are kept when the file is saved again. Reading also accepts a bare
-//! list of profiles, the site's listing (`{"items": [...]}`), one profile, or just a `colors`
-//! object, so a preset copied from the site or W2 Toolkit can be pasted in as it is.
+//! bars) are not applied, but are kept when the file is saved again; an `author` from a site preset
+//! is dropped. Reading also accepts a bare list of profiles, the site's listing
+//! (`{"items": [...]}`), one profile, or just a `colors` object, so a preset copied from the site or
+//! W2 Toolkit can be pasted in as it is.
 
 use crate::json::{self, Value};
 use crate::model::{self, MAX_PROFILES, PLAYERS, Profile};
@@ -129,7 +129,6 @@ fn profile_of(item: &Value, entry: usize) -> Result<Profile, &'static str> {
     };
     Ok(Profile {
         name: model::clean_name(text("name"), &format!("Profile {entry}")),
-        author: model::clean_name(text("author"), ""),
         colors: out,
         extra,
     })
@@ -158,7 +157,6 @@ fn to_value(p: &Profile) -> Value {
     colors.extend(p.extra.iter().cloned());
     Value::Obj(vec![
         ("name".into(), Value::Str(p.name.clone())),
-        ("author".into(), Value::Str(p.author.clone())),
         ("colors".into(), Value::Obj(colors)),
     ])
 }
@@ -237,7 +235,6 @@ mod tests {
             "hasMore":false}"##;
         let (p, _) = parse(site).unwrap();
         assert_eq!(p[0].name, "Classic Colors + Black 2 Pink");
-        assert_eq!(p[0].author, "Maxx444#2154");
         assert_eq!(p[0].colors[0], Some(CLASSIC[0]));
         assert_eq!(p[0].colors[1], None);
 
@@ -288,13 +285,12 @@ mod tests {
         let n = list.len();
         let mut p = list[0].clone();
         p.name = p.name.to_uppercase();
-        p.author = "me".into();
+        p.colors[0] = Some([1, 2, 3]);
         upsert(&mut list, p).unwrap();
         assert_eq!(list.len(), n);
-        assert_eq!(list[0].author, "me");
+        assert_eq!(list[0].colors[0], Some([1, 2, 3]));
         let q = Profile {
             name: "New".into(),
-            author: String::new(),
             colors: [None; PLAYERS],
             extra: Vec::new(),
         };

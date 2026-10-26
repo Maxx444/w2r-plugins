@@ -55,7 +55,6 @@ pub fn parse(text: &str) -> (Vec<Profile>, Vec<Warning>) {
                 skipping = false;
                 cur = Some(Profile {
                     name,
-                    author: String::new(),
                     colors: [None; PLAYERS],
                     extra: Vec::new(),
                 });
@@ -73,9 +72,7 @@ pub fn parse(text: &str) -> (Vec<Profile>, Vec<Warning>) {
             continue;
         };
         let key = key.trim().to_ascii_lowercase();
-        if key == "author" {
-            p.author = model::clean_name(value, "");
-        } else if let Some(i) = player_index(&key) {
+        if let Some(i) = player_index(&key) {
             let value = value.split(';').next().unwrap_or("");
             match model::parse_entry(value) {
                 Ok(c) => p.colors[i] = c,
@@ -126,7 +123,6 @@ just text
         let (p, w) = parse(SAMPLE);
         assert_eq!(p.len(), 2);
         assert_eq!(p[0].name, "Classic Colors + Black 2 Pink");
-        assert_eq!(p[0].author, "Maxx444#2154");
         let mut want = [None; PLAYERS];
         want[0] = Some([0xa4, 0, 0]);
         want[BLACK] = Some([0xff, 0, 0xff]);

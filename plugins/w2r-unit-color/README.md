@@ -17,10 +17,10 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
   profiles in `color_profiles.json` (up to 14, by name) as they were when the game started. Choose one and
   press Apply. It shows the profile whose colors are in use, or Custom once you change a color by
   hand.
-- **Save Profile:** check **Save Colors as Profile on Apply**, fill in **Profile Name** (and
-  **Author** if you like), then press Apply: the colors below are saved to `color_profiles.json`,
-  replacing a profile of the same name, and the box clears itself. Choosing a profile fills in its
-  name and author, so editing one is: choose it, Apply, reopen, change colors, check Save, Apply.
+- **Save Profile:** check **Save Colors as Profile on Apply**, fill in **Profile Name**, then
+  press Apply: the colors below are saved to `color_profiles.json`, replacing a profile of the same
+  name, and the box clears itself. Choosing a profile fills in its name, so editing one is: choose
+  it, Apply, reopen, change colors, check Save, Apply.
   A new name joins the dropdown at the next start (the card's list has it at once).
 - **Player Colors:** one color picker per team color, `Player 1 (Red)` .. `Player 8 (Yellow)`. Each
   shows a swatch and its hex value; the button opens the color editor with the new and the current
@@ -34,10 +34,10 @@ above the dropdown says so. If you change the dropdown and a picker in the same 
 
 | Row | What it does |
 |---|---|
-| `>> IN USE: ... <<` | The profile whose colors are in use ("name by author"), "Game default", or "Custom colors". |
+| `>> IN USE: ... <<` | The profile whose colors are in use, "Game default", or "Custom colors". |
 | `Player 1 (Red)` .. `Player 8 (Yellow)` | The color in use for that team as `#RRGGBB`, the same value the Options picker shows. Type a new one to apply it at once; clear the box for the game's own color. The Options pickers show a change the next time the screen opens. (Text boxes until the host offers a color swatch for plugin cards.) |
 | `Profile` + `Apply profile` | Game default, then every profile in `color_profiles.json`, including ones added since the game started. |
-| `Profile name`, `Author`, `Save current colors as this profile` | Saves the colors in use into `color_profiles.json`, replacing a profile of the same name. Moving the slider fills both boxes with that profile's name and author. |
+| `Profile name`, `Save current colors as this profile` | Saves the colors in use into `color_profiles.json`, replacing a profile of the same name. Moving the slider fills in that profile's name. |
 | `Reload color_profiles.json` | Reads the file again after you edit it; the card's list updates at once, the Options dropdown at the next start. |
 | `Reset all to game default` | Clears every color. |
 
@@ -55,14 +55,13 @@ plugin read or write; it never sees a path. Created the first time the plugin lo
 `color_profiles.ini` if there is one (that file is then no longer used), otherwise with four
 profiles (Remastered, Classic, Black to pink, Black to cyan).
 
-Each profile is a warcraft2.site / W2 Toolkit preset with a name and an author:
+Each profile is a warcraft2.site / W2 Toolkit preset with a name:
 
 ```json
 {
   "profiles": [
     {
       "name": "Classic Colors + Black 2 Pink",
-      "author": "Maxx444",
       "colors": {
         "players": [
           { "player": 1, "color": "#A40000" },
@@ -79,7 +78,7 @@ Each profile is a warcraft2.site / W2 Toolkit preset with a name and an author:
 
 - `player` is the team color's number (1 Red, 2 Blue, 3 Teal, 4 Violet, 5 Orange, 6 Black,
   7 White, 8 Yellow) and `color` is `#RRGGBB`. A player left out keeps the game's own color.
-- The name and author are printable ASCII, at most 40 characters each.
+- The name is printable ASCII, at most 40 characters. An `author` in a pasted site preset is ignored.
 - Other fields in `colors` (selection, ally, critter, gold mine and oil highlights, HP and mana
   bars) are not applied, but are kept when the plugin saves the file again.
 - A preset copied from warcraft2.site or W2 Toolkit can be pasted in as it is: the file may also be
