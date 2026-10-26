@@ -91,9 +91,19 @@ pub fn allied_table(
     Some(out)
 }
 
-/// Turns a key held down into one press: true only on the frame it goes down. `armed` false (the
-/// game window not in front, the chat box open, outside a match) still follows the key, so holding
-/// it while typing does not fire when the chat box closes.
+/// What one frame of the toggle key amounts to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Press {
+    /// Nothing new: the key is up, or still held from before.
+    None,
+    /// The key went down and may toggle.
+    Toggle,
+    /// The key went down, but not while armed (chat box open, game window in the background).
+    Ignored,
+}
+
+/// Turns a key held down into one press: only the frame it goes down counts. A press while not
+/// armed is `Ignored`, and holding the key until armed again does not toggle later.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Toggle {
     was_down: bool,
@@ -104,10 +114,14 @@ impl Toggle {
         Self { was_down: false }
     }
 
-    pub fn pressed(&mut self, down: bool, armed: bool) -> bool {
-        let fire = down && !self.was_down && armed;
+    pub fn press(&mut self, down: bool, armed: bool) -> Press {
+        let edge = down && !self.was_down;
         self.was_down = down;
-        fire
+        match (edge, armed) {
+            (false, _) => Press::None,
+            (true, true) => Press::Toggle,
+            (true, false) => Press::Ignored,
+        }
     }
 }
 
@@ -169,20 +183,20 @@ mod tests {
     #[test]
     fn toggle_fires_once_per_press() {
         let mut t = Toggle::default();
-        assert!(!t.pressed(false, true));
-        assert!(t.pressed(true, true));
-        assert!(!t.pressed(true, true)); // held
-        assert!(!t.pressed(true, true)); // the second view's call in the same frame
-        assert!(!t.pressed(false, true));
-        assert!(t.pressed(true, true));
+        assert_eq!(t.press(false, true), Press::None);
+        assert_eq!(t.press(true, true), Press::Toggle);
+        assert_eq!(t.press(true, true), Press::None); // held
+        assert_eq!(t.press(true, true), Press::None); // the second view's call in the same frame
+        assert_eq!(t.press(false, true), Press::None);
+        assert_eq!(t.press(true, true), Press::Toggle);
     }
 
     #[test]
-    fn toggle_ignores_a_key_held_while_not_armed() {
+    fn toggle_ignores_a_key_pressed_while_not_armed() {
         let mut t = Toggle::default();
-        assert!(!t.pressed(true, false)); // typing F2 in chat
-        assert!(!t.pressed(true, true)); // chat closed, key still down
-        assert!(!t.pressed(false, true));
-        assert!(t.pressed(true, true));
+        assert_eq!(t.press(true, false), Press::Ignored); // typing F2 in chat
+        assert_eq!(t.press(true, true), Press::None); // chat closed, key still down
+        assert_eq!(t.press(false, true), Press::None);
+        assert_eq!(t.press(true, true), Press::Toggle);
     }
 }

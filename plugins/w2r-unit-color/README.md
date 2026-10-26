@@ -188,7 +188,7 @@ color at the start of a match.
 ## Capabilities
 
 - `game.read`: symbol lookup for `TeamColourRgba`, `RenderPalette` and `HudMenuButtons`; for
-  Allied Minimap Colors also `LocalPlayer`, `DiplomacyStance`, `TeamColourReorder` and `ChatDialog`.
+  Allied Minimap Colors also `LocalPlayer`, `DiplomacyStance`, `TeamColourReorder` and `ChatTargetMode`.
 - `hooks.raw`: one detour on `HudMenuButtons` (drawn every frame in a match; original called first)
   as the per-frame tick, and direct writes to the two color tables and, with Allied Minimap Colors
   on, the minimap color table (found by offset, see above). `affects_simulation` is false: only

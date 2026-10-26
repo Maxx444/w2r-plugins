@@ -71,7 +71,8 @@ struct Minimap {
     local: *const u8,
     stance: *const u8,
     reorder: *const u8,
-    chat_dialog: *const *mut c_void,
+    /// Non-zero while the chat box is open (what w2r-chat reads as "composing").
+    chat_mode: *const u8,
 }
 
 // SAFETY: addresses of the game's globals, fixed for the session; used from the main thread.
@@ -671,7 +672,7 @@ fn setup_minimap(table: usize) -> Result<(), String> {
         local: need("LocalPlayer")? as *const u8,
         stance: need("DiplomacyStance")? as *const u8,
         reorder: need("TeamColourReorder")? as *const u8,
-        chat_dialog: need("ChatDialog")? as *const *mut c_void,
+        chat_mode: need("ChatTargetMode")? as *const u8,
     };
     let _ = MINIMAP.set(m);
     Ok(())
@@ -754,15 +755,25 @@ fn allied_tick() {
     let Some(m) = MINIMAP.get() else { return };
     let vk = HOTKEY.load(Ordering::Relaxed);
     if vk != 0 {
-        // SAFETY: a plain key-state query; ChatDialog is the game's pointer to the open chat box.
+        // SAFETY: a plain key-state query; ChatTargetMode is a byte in the game's data section.
         let down = (unsafe { GetAsyncKeyState(vk) } as u16) & 0x8000 != 0;
-        let armed = game_has_focus() && unsafe { (*m.chat_dialog).is_null() };
-        let fire = KEY
+        let focus = game_has_focus();
+        let chatting = unsafe { *m.chat_mode } != 0;
+        let press = KEY
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .pressed(down, armed);
-        if fire {
-            set_allied(!ALLIED.load(Ordering::Relaxed));
+            .press(down, focus && !chatting);
+        match press {
+            allied::Press::Toggle => set_allied(!ALLIED.load(Ordering::Relaxed)),
+            allied::Press::Ignored => log(
+                W2R_LOG_INFO,
+                if chatting {
+                    "Allied Minimap Colors hotkey ignored: the chat box is open"
+                } else {
+                    "Allied Minimap Colors hotkey ignored: the game window is not in front"
+                },
+            ),
+            allied::Press::None => {}
         }
     }
     unsafe { apply_minimap(m, ALLIED.load(Ordering::Relaxed)) };
