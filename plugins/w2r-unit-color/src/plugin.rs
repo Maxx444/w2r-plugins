@@ -154,7 +154,7 @@ static MINIMAP: OnceLock<Minimap> = OnceLock::new();
 /// Allied Minimap Colors on (the `allied_minimap` setting).
 static ALLIED: AtomicBool = AtomicBool::new(false);
 /// The toggle key's virtual-key code (0: none).
-static HOTKEY: AtomicI32 = AtomicI32::new(0x71);
+static HOTKEY: AtomicI32 = AtomicI32::new(0x70);
 /// True while the live minimap table holds what the plugin wrote.
 static MINIMAP_OWNED: AtomicBool = AtomicBool::new(false);
 static KEY: Mutex<allied::Toggle> = Mutex::new(allied::Toggle::new());
@@ -380,7 +380,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
             W2R_SETTING_CHOICE,
             allied::HOTKEY_KEY,
             "Allied Minimap Colors Hotkey",
-            "Press it in a match to turn Allied Minimap Colors on or off. It does nothing while the chat box is open or the game window is in the background. Default F2.",
+            "Press it in a match to turn Allied Minimap Colors on or off (not while chatting). Default F1. F2, F3 and F4 also jump the camera to a saved location, as the game uses them too.",
             ALLIED_SUBCATEGORY,
         );
         d.default_int = allied::DEFAULT_HOTKEY;

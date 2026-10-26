@@ -23,26 +23,27 @@ pub const STANCE_STRIDE: usize = 16;
 
 /// Settings keys.
 pub const ENABLED_KEY: &str = "allied_minimap";
-pub const HOTKEY_KEY: &str = "allied_hotkey";
+/// (`allied_hotkey` in 0.2.0 held an index into a longer list; a new key so it is not misread.)
+pub const HOTKEY_KEY: &str = "allied_key";
 
 /// The toggle key choices, in dropdown order, with their Windows virtual-key codes (0: none).
-pub const HOTKEYS: [(&str, i32); 10] = [
-    ("F2", 0x71),
-    ("F3", 0x72),
-    ("F4", 0x73),
-    ("F6", 0x75),
-    ("F7", 0x76),
+/// F2, F3 and F4 also jump the camera to a saved location in Remastered (the game sees the key
+/// too); F6, F7 and Insert are left out because the game uses them.
+pub const HOTKEYS: [(&str, i32); 8] = [
+    ("F1", 0x70),
     ("F8", 0x77),
-    ("Insert", 0x2d),
+    ("F2 (also moves the camera)", 0x71),
+    ("F3 (also moves the camera)", 0x72),
+    ("F4 (also moves the camera)", 0x73),
     ("Home", 0x24),
     ("End", 0x23),
     ("None (checkbox only)", 0),
 ];
 
-/// F2, the default.
+/// F1, the default.
 pub const DEFAULT_HOTKEY: i64 = 0;
 
-/// The hotkey choice stored as `index`: its label and virtual-key code. Out of range is F2.
+/// The hotkey choice stored as `index`: its label and virtual-key code. Out of range is F1.
 pub fn hotkey(index: i64) -> (&'static str, i32) {
     usize::try_from(index)
         .ok()
@@ -169,12 +170,19 @@ mod tests {
     }
 
     #[test]
-    fn hotkey_defaults_to_f2() {
-        assert_eq!(hotkey(DEFAULT_HOTKEY), ("F2", 0x71));
-        assert_eq!(hotkey(-1), ("F2", 0x71));
-        assert_eq!(hotkey(99), ("F2", 0x71));
-        assert_eq!(hotkey(6), ("Insert", 0x2d));
-        assert_eq!(hotkey(9).1, 0);
+    fn hotkey_defaults_to_f1() {
+        assert_eq!(hotkey(DEFAULT_HOTKEY), ("F1", 0x70));
+        assert_eq!(hotkey(-1).1, 0x70);
+        assert_eq!(hotkey(99).1, 0x70);
+        assert_eq!(hotkey(1).1, 0x77);
+        assert_eq!(hotkey(2).1, 0x71);
+        assert_eq!(hotkey(7).1, 0);
+        // F6, F7 and Insert are used by the game.
+        assert!(
+            HOTKEYS
+                .iter()
+                .all(|&(_, vk)| vk != 0x75 && vk != 0x76 && vk != 0x2d)
+        );
         // The host takes at most 16 choices of at most 64 bytes.
         assert!(HOTKEYS.len() >= 2 && HOTKEYS.len() <= 16);
         assert!(HOTKEYS.iter().all(|(l, _)| l.len() <= 64));

@@ -75,22 +75,26 @@ executable and cannot load in Remastered).
 
 ### Turning it on and off
 
-- **Hotkey: F2** (by default) turns it on or off during a match. It only works while the game
-  window is in front and the chat box is closed, so typing F2 in chat or in another program does
-  nothing. Hold-to-repeat does not flicker it: one press, one toggle.
+- **Hotkey: F1** (by default) turns it on or off during a match. It only works while the game
+  window is in front and the chat box is closed, so typing it in chat or in another program does
+  nothing. Hold-to-repeat does not flicker it: one press, one toggle. A press that is ignored says
+  why in the log.
 - **Options > Unit Color > Allied Minimap Colors:** the **Allied Minimap Colors** checkbox, and
-  **Allied Minimap Colors Hotkey**, a dropdown with F2, F3, F4, F6, F7, F8, Insert, Home, End, or
-  **None (checkbox only)**. Pick another key if F2 clashes with something you use. The Combat
-  Edition plugin used Insert.
+  **Allied Minimap Colors Hotkey**, a dropdown with F1, F8, F2, F3, F4, Home, End, or **None
+  (checkbox only)**.
 - **The plugin's card** (title screen > Manage): the same checkbox, and a note with the current
   hotkey.
 
 The hotkey, the checkbox and the options screen are one setting (`allied_minimap`, with the key in
-`allied_hotkey`): pressing F2 in a match also changes the checkbox, and it stays as you left it for
+`allied_key`): pressing the hotkey in a match also changes the checkbox, and it stays as you left it for
 the next match and the next start.
 
-The key is not taken away from the game: if the game or another plugin also uses the key, both
-react. (Not yet checked in game whether Remastered uses F2 for anything.)
+**F2, F3 and F4 also move the camera.** In Remastered they jump the view to a saved location (your
+start location by default; F4 also switches between the current fight and the start location). A
+plugin cannot take a key away from the game, so with one of them as the hotkey, every press toggles
+the colors *and* moves the camera. They are in the list, marked "(also moves the camera)", for
+those who want them anyway. **F6, F7 and Insert are not offered** because the game uses them. The
+Combat Edition plugin used Insert; F1 is the default here; in testing the game did nothing with it (nor with F8).
 
 ### What you see
 
