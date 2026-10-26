@@ -1169,10 +1169,6 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
                     "Change the hotkey in Options > Unit Color > Allied Minimap Colors.",
                 );
             }
-            label(
-                ui,
-                "Allied Minimap Colors: inspired by Lambchops' Allied Colors (Battle.net Edition).",
-            );
         } else {
             label(
                 ui,
@@ -1195,8 +1191,8 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
 }
 
 /// Draws the card's Color Profile dropdown and applies a pick: Game default, or a profile's colors
-/// (the swatches, the boxes, the In Use line, the slider and the name fields follow at once). The
-/// status line to show, if something was applied.
+/// (the swatches, the boxes and the name fields follow at once). Returns an empty status line when
+/// something was applied (the dropdown itself shows it), to clear an older message.
 unsafe fn profile_dropdown(ui: &W2rUi, combo: ComboFn, page: &mut Page) -> Option<String> {
     let listed: Vec<String> = page
         .profiles
@@ -1227,7 +1223,8 @@ unsafe fn profile_dropdown(ui: &W2rUi, combo: ComboFn, page: &mut Page) -> Optio
             choose(page, [None; PLAYERS]);
             page.selected = 0;
             fill_names(page);
-            Some("Applied Game default".into())
+            // The dropdown shows what was applied; clear any older message instead.
+            Some(String::new())
         }
         Some(Some(name)) => {
             let i = page
@@ -1239,7 +1236,7 @@ unsafe fn profile_dropdown(ui: &W2rUi, combo: ComboFn, page: &mut Page) -> Optio
             fill_names(page);
             prefill_name(&p.name);
             choose(page, p.colors);
-            Some(format!("Applied {}", p.name))
+            Some(String::new())
         }
         // Custom: there is nothing to apply.
         None => None,
