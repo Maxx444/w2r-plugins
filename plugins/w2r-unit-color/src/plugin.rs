@@ -927,6 +927,9 @@ fn delete_named(page: &mut Page, name: &str) -> String {
     if name.is_empty() {
         return "Nothing deleted: no profile name".into();
     }
+    if model::is_protected(name) {
+        return format!("Not deleted: {name} is built in");
+    }
     if !page.file_ok {
         return format!("Not deleted: {PROFILES_FILE} could not be read; fix it, then Reload");
     }
@@ -957,6 +960,9 @@ fn save_current(page: &mut Page) -> String {
     let name = model::clean_name(&text_of(&page.name), "");
     if name.is_empty() {
         return "Type a profile name first".into();
+    }
+    if model::is_protected(&name) {
+        return format!("Not saved: {name} is built in; save under a different name");
     }
     if !page.file_ok {
         return format!("Not saved: {PROFILES_FILE} could not be read; fix it, then Reload");
@@ -992,8 +998,12 @@ fn save_current(page: &mut Page) -> String {
 unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
     let edits = ui.struct_size >= W2R_UI_TEXT_EDIT_SIZE;
     unsafe {
-        // The host draws plain text only, so the line is set apart by its shape.
-        label(ui, &format!(">>  IN USE:  {}  <<", in_use(page)));
+        let dropdown = combo_of(ui);
+        // The Color Profile dropdown shows the profile in use; without it, a line does.
+        if dropdown.is_none() {
+            // The host draws plain text only, so the line is set apart by its shape.
+            label(ui, &format!(">>  IN USE:  {}  <<", in_use(page)));
+        }
 
         if DECLARED.load(Ordering::Relaxed) {
             label(
@@ -1054,31 +1064,32 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
 
         // The Color Profile dropdown, as in Options > Unit Color (Custom, Game default, then the
         // first profiles in color_profiles.json), but live: it lists the file as it is now, shows
-        // the profile in use, and a pick applies at once. Above the slider for now.
-        if let Some(combo) = combo_of(ui) {
+        // the profile in use, and a pick applies at once.
+        if let Some(combo) = dropdown {
             if let Some(note) = profile_dropdown(ui, combo, page) {
                 page.status = note;
             }
-        }
-
-        // Profiles: 0 is the game's own colours, then color_profiles.json in file order. Reload
-        // re-reads the file, so edits show here at once.
-        let last = page.profiles.len() as i32;
-        page.selected = page.selected.clamp(0, last);
-        if last > 0 && (ui.slider_int)(ui.ctx, s("Profile"), &mut page.selected, 0, last) != 0 {
-            fill_names(page);
-            page.confirm_delete = None;
-        }
-        let title = selected(page).map_or_else(|| "Game default".to_string(), |p| p.name.clone());
-        label(ui, &format!("Profile: {title}"));
-        if button(ui, "Apply profile") {
-            let c = selected(page).map_or([None; PLAYERS], |p| p.colors);
-            if let Some(p) = selected(page) {
-                let n = p.name.clone();
-                prefill_name(&n);
+        } else {
+            // A loader without card dropdowns: the slider and Apply profile. 0 is the game's own
+            // colours, then color_profiles.json in file order.
+            let last = page.profiles.len() as i32;
+            page.selected = page.selected.clamp(0, last);
+            if last > 0 && (ui.slider_int)(ui.ctx, s("Profile"), &mut page.selected, 0, last) != 0 {
+                fill_names(page);
+                page.confirm_delete = None;
             }
-            choose(page, c);
-            page.status = format!("Applied {title}");
+            let title =
+                selected(page).map_or_else(|| "Game default".to_string(), |p| p.name.clone());
+            label(ui, &format!("Profile: {title}"));
+            if button(ui, "Apply profile") {
+                let c = selected(page).map_or([None; PLAYERS], |p| p.colors);
+                if let Some(p) = selected(page) {
+                    let n = p.name.clone();
+                    prefill_name(&n);
+                }
+                choose(page, c);
+                page.status = format!("Applied {title}");
+            }
         }
 
         if edits {
@@ -1089,12 +1100,24 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             }
         }
 
-        // Delete the profile chosen with the slider, after an "are you sure".
+        // Delete the profile shown in the dropdown (the one in use), or chosen with the slider,
+        // after an "are you sure". The built-in profiles cannot be deleted.
         match page.confirm_delete.clone() {
             None => {
                 if button(ui, "Delete this profile") {
-                    match selected(page) {
-                        Some(p) => page.confirm_delete = Some(p.name.clone()),
+                    let target = if dropdown.is_some() {
+                        model::matching(&page.profiles, &colors(), &stock()).map(|p| p.name.clone())
+                    } else {
+                        selected(page).map(|p| p.name.clone())
+                    };
+                    match target {
+                        Some(name) if model::is_protected(&name) => {
+                            page.status = format!("{name} is built in and cannot be deleted")
+                        }
+                        Some(name) => page.confirm_delete = Some(name),
+                        None if dropdown.is_some() => {
+                            page.status = "Choose a profile in the Color Profile list first".into()
+                        }
                         None => page.status = "Choose a profile with the slider first".into(),
                     }
                 }
@@ -1163,6 +1186,10 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         label(
             ui,
             "File: plugins\\w2r-unit-color\\data\\color_profiles.json in your w2r folder.",
+        );
+        label(
+            ui,
+            "Credits: Beau Hastings, Luxray997, Maxx444; earlier work by Mateuszk and Lambchops.",
         );
     }
 }

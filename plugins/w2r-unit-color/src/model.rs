@@ -94,6 +94,16 @@ pub const MAX_CHOICES: usize = 16;
 pub const MAX_LISTED: usize = MAX_CHOICES - 2;
 /// Longest dropdown label the host accepts.
 const MAX_CHOICE_LABEL: usize = 64;
+/// Profile names that cannot be saved over or deleted: the dropdown's Game default and the two
+/// built-in color sets.
+pub const PROTECTED: [&str; 3] = ["Game default", "Classic", "Remastered"];
+
+/// Whether `name` (spaces around it and case ignored) is one of [`PROTECTED`].
+pub fn is_protected(name: &str) -> bool {
+    let name = name.trim();
+    PROTECTED.iter().any(|p| p.eq_ignore_ascii_case(name))
+}
+
 /// Settings key of the dropdown (an index).
 pub const PROFILE_KEY: &str = "profile";
 /// Settings keys of the options screen's save fields: the checkbox that makes Apply save, and the
@@ -464,5 +474,15 @@ mod tests {
             assert_eq!(rgb_of(float_rgb(rgb)), rgb);
         }
         assert_eq!(rgb_of([-1.0, 2.0, 0.5]), [0, 255, 128]);
+    }
+
+    #[test]
+    fn built_in_profile_names_are_protected() {
+        for name in ["Game default", "classic", "  REMASTERED  ", "Classic"] {
+            assert!(is_protected(name), "{name}");
+        }
+        for name in ["Classic 2", "My Classic", "Black to pink", "", "Custom"] {
+            assert!(!is_protected(name), "{name}");
+        }
     }
 }

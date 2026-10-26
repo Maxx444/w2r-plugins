@@ -9,6 +9,15 @@ plugin, which this one replaces.
 second one to load fails (the log says `hook_install returned` with a conflict). Black Recolor's
 pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cyan" profile.
 
+## Credits
+
+- **Beau Hastings** (hastinbe): Black Recolor, which this plugin replaces, and the W2R Mod Loader.
+- **Luxray997**: the "Black2Pink" option of [wc2r-plus](https://github.com/Luxray997/wc2r-plus)
+  (MIT), where the recolor started.
+- **Maxx444**: Unit Color (all eight colors, color profiles, Allied Minimap Colors).
+- Earlier work: **Mateuszk**, and **Lambchops**, whose *Allied Color* plugin for the Battle.net
+  Edition is the idea behind Allied Minimap Colors.
+
 ## Settings
 
 **Options > Unit Color** (needs a W2R Mod Loader with the options screen):
@@ -44,12 +53,12 @@ change the dropdown and a picker in the same visit, the profile wins.
 
 | Row | What it does |
 |---|---|
-| `>> IN USE: ... <<` | The profile whose colors are in use, "Game default", or "Custom colors". |
+| `>> IN USE: ... <<` | Only on a W2R Mod Loader without card dropdowns (otherwise the Color Profile dropdown shows it): the profile whose colors are in use, "Game default", or "Custom colors". |
 | `Player 1 (Red)` .. `Player 8 (Yellow)` | One row per team color: on a W2R Mod Loader with card color rows (Maxx444's personal loader, branch `personal/card-color-swatches`), a swatch and a `#rrggbb` button that opens the same color editor as Options; otherwise a text box with `#RRGGBB` (type a new one to apply it at once; clear the box for the game's own color). Picking the game's own color leaves that team unchanged. The Options pickers show a change the next time the screen opens. |
-| `Color Profile` (dropdown, above the slider) | On a W2R Mod Loader with card dropdowns (Maxx444's personal loader, branch `personal/card-color-swatches`): the same list as Options > Unit Color (Custom, Game default, then the first 14 profiles in `color_profiles.json`), but read live from the file and applied at once: the colors, the swatches, the In Use line, the slider and the profile name fields follow immediately. Custom does nothing (it only says the colors are your own). |
-| `Profile` + `Apply profile` | Game default, then every profile in `color_profiles.json`, including ones added since the game started. |
+| `Color Profile` (dropdown) | On a W2R Mod Loader with card dropdowns (Maxx444's personal loader, branch `personal/card-color-swatches`): the same list as Options > Unit Color (Custom, Game default, then the first 14 profiles in `color_profiles.json`), read live from the file. A pick applies at once: the colors, the swatches and the Profile name box follow. It shows the profile in use, or Custom. Profiles after the 14th cannot be reached from the card. |
+| `Profile` + `Apply profile` (only without card dropdowns) | Game default, then every profile in `color_profiles.json`, including ones added since the game started. |
 | `Profile name`, `Save current colors as this profile` | Saves the colors in use into `color_profiles.json`, replacing a profile of the same name. Moving the slider fills in that profile's name. |
-| `Delete this profile` | Asks "Delete "name"? This cannot be undone." for the profile chosen with the slider, then `Yes, delete it` removes it from `color_profiles.json` and `No, keep it` does nothing. The colors in use are not changed. |
+| `Delete this profile` | Asks "Delete "name"? This cannot be undone." for the profile shown in the Color Profile dropdown (without card dropdowns: chosen with the slider), then `Yes, delete it` removes it from `color_profiles.json` and `No, keep it` does nothing. The colors in use are not changed. Game default, Classic and Remastered cannot be deleted. |
 | `Reload color_profiles.json` | Reads the file again after you edit it; the card's list updates at once, the Options dropdown at the next start. |
 | `Reset all to game default` | Clears every color. |
 
@@ -156,6 +165,7 @@ Each profile is a warcraft2.site / W2 Toolkit preset with a name:
 
 - `player` is the team color's number (1 Red, 2 Blue, 3 Teal, 4 Violet, 5 Orange, 6 Black,
   7 White, 8 Yellow) and `color` is `#RRGGBB`. A player left out keeps the game's own color.
+- **Game default**, **Classic** and **Remastered** are protected: saving under one of those names (any case) is refused, so save changes under a different name, and neither the card nor the options screen deletes them. Edit the file by hand to change them.
 - The name is printable ASCII, at most 40 characters. An `author` in a pasted site preset is ignored.
 - Other fields in `colors` (selection, ally, critter, gold mine and oil highlights, HP and mana
   bars) are not applied, but are kept when the plugin saves the file again.
