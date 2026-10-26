@@ -60,9 +60,12 @@ pub struct Profile {
     pub name: String,
     pub author: String,
     pub colors: Colors,
+    /// The `colors` object's other fields (highlight and bar colors from warcraft2.site and W2
+    /// Toolkit presets). Not applied, only kept so the file loses nothing when it is saved again.
+    pub extra: Vec<(String, crate::json::Value)>,
 }
 
-/// What a new `color_profiles.ini` holds, in this order.
+/// What a new `color_profiles.json` holds, in this order.
 pub fn default_profiles() -> Vec<Profile> {
     let all = |c: [Rgb; PLAYERS]| c.map(Some);
     let black = |rgb| {
@@ -74,6 +77,7 @@ pub fn default_profiles() -> Vec<Profile> {
         name: name.into(),
         author: author.into(),
         colors,
+        extra: Vec::new(),
     };
     vec![
         p("Remastered", "Blizzard Entertainment", all(REMASTERED)),
@@ -319,6 +323,7 @@ mod tests {
             name: "X".into(),
             author: String::new(),
             colors: [None; PLAYERS],
+            extra: Vec::new(),
         };
         assert_eq!(title(&anon), "X");
     }
@@ -370,6 +375,7 @@ mod tests {
             name: "x".repeat(40),
             author: "y".repeat(40),
             colors: [None; PLAYERS],
+            extra: Vec::new(),
         });
         let labels = choice_labels(&d);
         assert_eq!(labels[0], "Custom");
@@ -381,6 +387,7 @@ mod tests {
                 name: format!("p{i}"),
                 author: String::new(),
                 colors: [None; PLAYERS],
+                extra: Vec::new(),
             })
             .collect();
         assert_eq!(choice_labels(&many).len(), MAX_CHOICES);
