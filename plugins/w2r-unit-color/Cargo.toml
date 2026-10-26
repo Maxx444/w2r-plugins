@@ -1,13 +1,13 @@
 [package]
-name = "w2r-black-recolor"
+name = "w2r-unit-color"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-description = "Recolors the black player pink or cyan on your screen, for visibility"
+description = "Custom colors for all eight teams on your screen, with color profiles you can share"
 
 [lib]
-name = "w2r_black_recolor"
+name = "w2r_unit_color"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
