@@ -11,7 +11,7 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
 
 ## Settings
 
-**Options > Accessibility > Unit Colors** (W2R Mod Loader with the options screen): one color
+**Options > Unit Color**, under Player Colors (needs a W2R Mod Loader with the options screen): one color
 picker per team color, `Player 1 (Red)` .. `Player 8 (Yellow)`. Each shows a swatch and its hex
 value; the button opens the color editor with the new and the current color side by side. Applied
 with the screen's Apply or Save and Exit. Picking the game's own color means no change for that
