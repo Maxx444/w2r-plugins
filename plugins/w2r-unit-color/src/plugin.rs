@@ -757,32 +757,38 @@ fn game_has_focus() -> bool {
     }
 }
 
-/// Makes the live minimap table match `on`: the allied colours, or the game's own once the plugin
-/// stops (only if it wrote them, so the game's table is never touched otherwise).
-unsafe fn apply_minimap(m: &Minimap, on: bool) {
+/// Makes the live minimap table match the colours and `on`: each player's dot by their colour
+/// (a recoloured Blue or White points at its palette ramp, which the recolour rewrites), then
+/// allies blue and enemies red when Allied Minimap Colors is on. When that is just the game's own
+/// table it is written back only if the plugin had changed it, so the game's table is never
+/// touched otherwise.
+unsafe fn apply_minimap(m: &Minimap, on: bool, wanted: &Colors) {
     unsafe {
         let current = read8(m.live);
         let reorder = read8(m.reorder);
+        let recolored = wanted.map(|c| c.is_some());
+        let ramps: [Option<u8>; allied::SLOTS] =
+            core::array::from_fn(|c| model::ramp_base(c).and_then(|b| u8::try_from(b).ok()));
+        let base = allied::base_table(&reorder, &current, &recolored, &ramps);
         let want = if on {
             let local = *m.local;
             if usize::from(local) < allied::SLOTS {
                 let row = read8(m.stance.add(usize::from(local) * allied::STANCE_STRIDE));
-                allied::allied_table(local, &row, &reorder, &current)
+                allied::allied_table(local, &row, &base).unwrap_or(base)
             } else {
-                None
+                base
             }
         } else {
-            None
+            base
         };
-        let next = match want {
-            Some(t) => {
-                MINIMAP_OWNED.store(true, Ordering::Relaxed);
-                t
-            }
-            None if MINIMAP_OWNED.swap(false, Ordering::Relaxed) => {
-                allied::stock_table(&reorder, &current)
-            }
-            None => return,
+        let stock = allied::stock_table(&reorder, &current);
+        let next = if want != stock {
+            MINIMAP_OWNED.store(true, Ordering::Relaxed);
+            want
+        } else if MINIMAP_OWNED.swap(false, Ordering::Relaxed) {
+            stock
+        } else {
+            return;
         };
         for (p, dot) in next.iter().enumerate() {
             if current[p] != *dot {
@@ -818,7 +824,7 @@ fn allied_tick() {
             allied::Press::None => {}
         }
     }
-    unsafe { apply_minimap(m, ALLIED.load(Ordering::Relaxed)) };
+    unsafe { apply_minimap(m, ALLIED.load(Ordering::Relaxed), &colors()) };
 }
 
 unsafe extern "C" fn menu_buttons_detour(view: i32) {
@@ -1468,7 +1474,7 @@ unsafe extern "C" fn on_unload() {
             unsafe { apply(game, &[None; PLAYERS]) };
         }
         if let Some(m) = MINIMAP.get() {
-            unsafe { apply_minimap(m, false) };
+            unsafe { apply_minimap(m, false, &[None; PLAYERS]) };
         }
     }));
 }

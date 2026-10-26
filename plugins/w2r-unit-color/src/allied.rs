@@ -62,24 +62,57 @@ pub fn stock_table(reorder: &[u8; SLOTS], current: &[u8; SLOTS]) -> [u8; SLOTS] 
     out
 }
 
+/// The dot of team colour `c`: the first entry of its palette ramp when the colour is recoloured
+/// and its stock dot is not already that entry (Blue's dot is the shared entry 1 and White's 255,
+/// which the recolour cannot touch; their ramps, 0xd4 and 0xe8, it rewrites). Otherwise the stock
+/// dot. `ramp` is the colour's ramp start, if it has one (Yellow has none).
+pub fn dot_for(c: usize, recolored: bool, ramp: Option<u8>) -> Option<u8> {
+    let stock = *STOCK.get(c)?;
+    Some(match ramp {
+        Some(first) if recolored && first != stock => first,
+        _ => stock,
+    })
+}
+
+/// The live table with the plugin's colours and Allied Minimap Colors off: each player's dot by
+/// the colour the match gave them (`reorder`), [`dot_for`] each. A colour index out of range keeps
+/// what is there now.
+pub fn base_table(
+    reorder: &[u8; SLOTS],
+    current: &[u8; SLOTS],
+    recolored: &[bool; SLOTS],
+    ramps: &[Option<u8>; SLOTS],
+) -> [u8; SLOTS] {
+    let mut out = *current;
+    for (p, slot) in out.iter_mut().enumerate() {
+        let c = usize::from(reorder[p]);
+        if let Some(dot) = dot_for(
+            c,
+            recolored.get(c) == Some(&true),
+            ramps.get(c).copied().flatten(),
+        ) {
+            *slot = dot;
+        }
+    }
+    out
+}
+
 /// The live table with Allied Minimap Colors on. `stance_row` is the local player's row of
-/// `DiplomacyStance` (non-zero: allied). The local player keeps their own dot; `None` when the
-/// local player is not one of the eight (nothing to colour against).
+/// `DiplomacyStance` (non-zero: allied). The local player keeps their dot from `base`; `None` when
+/// the local player is not one of the eight (nothing to colour against).
 pub fn allied_table(
     local: u8,
     stance_row: &[u8; SLOTS],
-    reorder: &[u8; SLOTS],
-    current: &[u8; SLOTS],
+    base: &[u8; SLOTS],
 ) -> Option<[u8; SLOTS]> {
     let local = usize::from(local);
     if local >= SLOTS {
         return None;
     }
-    let stock = stock_table(reorder, current);
     let mut out = [0u8; SLOTS];
     for (p, slot) in out.iter_mut().enumerate() {
         *slot = if p == local {
-            stock[p]
+            base[p]
         } else if stance_row[p] != 0 {
             ALLY
         } else {
@@ -148,22 +181,69 @@ mod tests {
         let mut row = [0u8; SLOTS];
         row[0] = 1;
         row[5] = 1;
-        let t = allied_table(2, &row, &IDENTITY, &STOCK).unwrap();
+        let t = allied_table(2, &row, &STOCK).unwrap();
         assert_eq!(t, [ALLY, ENEMY, 0xd8, ENEMY, ENEMY, ALLY, ENEMY, ENEMY]);
     }
 
     #[test]
     fn self_keeps_its_own_dot_even_if_the_stance_row_says_allied() {
         let row = [1u8; SLOTS];
-        let t = allied_table(0, &row, &IDENTITY, &STOCK).unwrap();
+        let t = allied_table(0, &row, &STOCK).unwrap();
         assert_eq!(t[0], 0xd0);
         assert!(t[1..].iter().all(|&d| d == ALLY));
     }
 
     #[test]
     fn no_local_player_no_table() {
-        assert_eq!(allied_table(8, &[0; SLOTS], &IDENTITY, &STOCK), None);
-        assert_eq!(allied_table(255, &[0; SLOTS], &IDENTITY, &STOCK), None);
+        assert_eq!(allied_table(8, &[0; SLOTS], &STOCK), None);
+        assert_eq!(allied_table(255, &[0; SLOTS], &STOCK), None);
+    }
+
+    /// The ramps as the plugin has them: red to white, four entries apart from 0xd0.
+    const RAMPS: [Option<u8>; SLOTS] = [
+        Some(0xd0),
+        Some(0xd4),
+        Some(0xd8),
+        Some(0xdc),
+        Some(0xe0),
+        Some(0xe4),
+        Some(0xe8),
+        None,
+    ];
+
+    #[test]
+    fn recolored_blue_and_white_dots_move_to_their_ramps() {
+        let mut recolored = [false; SLOTS];
+        assert_eq!(base_table(&IDENTITY, &STOCK, &recolored, &RAMPS), STOCK);
+        recolored[1] = true;
+        recolored[6] = true;
+        recolored[7] = true; // yellow: no ramp, stays
+        recolored[0] = true; // red: its dot already is its ramp's first entry
+        let t = base_table(&IDENTITY, &STOCK, &recolored, &RAMPS);
+        assert_eq!(t, [0xd0, 0xd4, 0xd8, 0xdc, 0xe0, 0xe4, 0xe8, 0x02]);
+    }
+
+    #[test]
+    fn the_dot_follows_the_colour_the_player_got() {
+        // Player 0 plays White, player 6 plays Red.
+        let mut reorder = IDENTITY;
+        reorder[0] = 6;
+        reorder[6] = 0;
+        let mut recolored = [false; SLOTS];
+        recolored[6] = true;
+        let t = base_table(&reorder, &[0; SLOTS], &recolored, &RAMPS);
+        assert_eq!(t[0], 0xe8);
+        assert_eq!(t[6], 0xd0);
+    }
+
+    #[test]
+    fn allied_colors_keep_your_recolored_dot() {
+        let mut recolored = [false; SLOTS];
+        recolored[6] = true;
+        let base = base_table(&IDENTITY, &STOCK, &recolored, &RAMPS);
+        let t = allied_table(6, &[0; SLOTS], &base).unwrap();
+        assert_eq!(t[6], 0xe8);
+        assert!(t.iter().enumerate().all(|(p, &d)| p == 6 || d == ENEMY));
     }
 
     #[test]

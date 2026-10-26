@@ -114,7 +114,7 @@ Combat Edition plugin used Insert; F1 is the default here; in testing the game d
 
 | Minimap dots of | With it on |
 |---|---|
-| You | Your own color (unchanged) |
+| You | Your own color (unchanged; a custom Blue or White as described under What changes) |
 | Allied players | The stock blue dot |
 | Everyone else (enemies) | The stock red dot |
 
@@ -194,9 +194,14 @@ color at the start of a match.
 - **Render palette ramps** for Red to White (entries `0xd0` to `0xeb`, four per team, shaded by the
   stock ramp's brightness steps): classic-graphics sprites, and the minimap dots of the colors whose
   dot uses the ramp's first entry (Red, Teal, Violet, Orange, Black).
-- **Not changed:** Yellow has no ramp of its own (`0xec`.. holds the gold mine highlight), and the
-  minimap dots of Blue, White and Yellow use shared palette entries (1, 255 and 2) that other
-  things use too, so those stay stock. The War_2_Remastered_Mods color tool has the same limits.
+- **Minimap dots of Blue and White** (personal build): the game draws them with shared palette
+  entries (1 and 255) that other things use too, so those entries stay stock. Instead, when Blue or
+  White has a custom color, those players' entries in the minimap dot table (the one Allied
+  Minimap Colors uses) point at the first entry of their own ramp (`0xd4` and `0xe8`), which
+  carries the custom color. Back to the game's own color, the stock entry comes back.
+- **Not changed:** Yellow has no ramp of its own (`0xec`.. holds the gold mine highlight) and its
+  minimap dot uses the shared entry 2, so Yellow stays stock everywhere except the HD table. The
+  War_2_Remastered_Mods color tool has the same limit.
 - **Score screen:** the colored bars after a match come from the game's skin file
   (`fe_endgame_stats_bar_0` .. `_7` in `Data\skins\skins.json`), not from the color table. Maxx444's
   personal W2R Mod Loader (core 1.1.4, branch `personal/card-color-swatches`) recolors them from
@@ -212,5 +217,5 @@ color at the start of a match.
   Allied Minimap Colors also `LocalPlayer`, `DiplomacyStance`, `TeamColourReorder` and `ChatTargetMode`.
 - `hooks.raw`: one detour on `HudMenuButtons` (drawn every frame in a match; original called first)
   as the per-frame tick, and direct writes to the two color tables and, with Allied Minimap Colors
-  on, the minimap color table (found by offset, see above). `affects_simulation` is false: only
+  on or a custom Blue or White, the minimap color table (found by offset, see above). `affects_simulation` is false: only
   what your screen draws changes.
