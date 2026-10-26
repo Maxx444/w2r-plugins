@@ -80,8 +80,7 @@ executable and cannot load in Remastered).
   nothing. Hold-to-repeat does not flicker it: one press, one toggle. A press that is ignored says
   why in the log.
 - **Options > Unit Color > Allied Minimap Colors:** the **Allied Minimap Colors** checkbox, and
-  **Allied Minimap Colors Hotkey**, a dropdown with F1, F8, F2, F3, F4, Home, End, or **None
-  (checkbox only)**.
+  **Allied Minimap Colors Hotkey**, a dropdown with F1, F8, F2, F3 and F4.
 - **The plugin's card** (title screen > Manage): the same checkbox, and a note with the current
   hotkey.
 

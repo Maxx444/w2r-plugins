@@ -153,7 +153,7 @@ static PAGE: Mutex<Option<Page>> = Mutex::new(None);
 static MINIMAP: OnceLock<Minimap> = OnceLock::new();
 /// Allied Minimap Colors on (the `allied_minimap` setting).
 static ALLIED: AtomicBool = AtomicBool::new(false);
-/// The toggle key's virtual-key code (0: none).
+/// The toggle key's virtual-key code.
 static HOTKEY: AtomicI32 = AtomicI32::new(0x70);
 /// True while the live minimap table holds what the plugin wrote.
 static MINIMAP_OWNED: AtomicBool = AtomicBool::new(false);
@@ -1062,15 +1062,11 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             {
                 set_allied(on != 0);
             }
-            let (key, vk) = allied::hotkey(get_i64(allied::HOTKEY_KEY));
-            if vk == 0 {
-                label(ui, "Hotkey: none, use this box or Options > Unit Color.");
-            } else {
-                label(
-                    ui,
-                    &format!("Hotkey: {key} turns it on or off in a match (not while chatting)."),
-                );
-            }
+            let (key, _) = allied::hotkey(get_i64(allied::HOTKEY_KEY));
+            label(
+                ui,
+                &format!("Hotkey: {key} turns it on or off in a match (not while chatting)."),
+            );
             if DECLARED.load(Ordering::Relaxed) {
                 label(
                     ui,

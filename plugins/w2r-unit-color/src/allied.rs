@@ -26,18 +26,15 @@ pub const ENABLED_KEY: &str = "allied_minimap";
 /// (`allied_hotkey` in 0.2.0 held an index into a longer list; a new key so it is not misread.)
 pub const HOTKEY_KEY: &str = "allied_key";
 
-/// The toggle key choices, in dropdown order, with their Windows virtual-key codes (0: none).
+/// The toggle key choices, in dropdown order, with their Windows virtual-key codes.
 /// F2, F3 and F4 also jump the camera to a saved location in Remastered (the game sees the key
 /// too); F6, F7 and Insert are left out because the game uses them.
-pub const HOTKEYS: [(&str, i32); 8] = [
+pub const HOTKEYS: [(&str, i32); 5] = [
     ("F1", 0x70),
     ("F8", 0x77),
     ("F2 (also moves the camera)", 0x71),
     ("F3 (also moves the camera)", 0x72),
     ("F4 (also moves the camera)", 0x73),
-    ("Home", 0x24),
-    ("End", 0x23),
-    ("None (checkbox only)", 0),
 ];
 
 /// F1, the default.
@@ -176,7 +173,7 @@ mod tests {
         assert_eq!(hotkey(99).1, 0x70);
         assert_eq!(hotkey(1).1, 0x77);
         assert_eq!(hotkey(2).1, 0x71);
-        assert_eq!(hotkey(7).1, 0);
+        assert_eq!(HOTKEYS.map(|(_, vk)| vk), [0x70, 0x77, 0x71, 0x72, 0x73]);
         // F6, F7 and Insert are used by the game.
         assert!(
             HOTKEYS
