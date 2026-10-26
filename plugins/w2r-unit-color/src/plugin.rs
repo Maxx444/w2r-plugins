@@ -65,6 +65,29 @@ const MINIMAP_STOCK_AFTER_LIVE: usize = 0x20;
 
 type MenuButtonsFn = unsafe extern "C" fn(i32);
 
+/// `W2rUi.color_edit`: a caption, a swatch and a button that opens the host's color editor over
+/// a 7-byte `rrggbb` + NUL buffer; 1 when OK picked a different color. Appended to `W2rUi` by
+/// Maxx444's personal W2R Mod Loader (branch personal/card-color-swatches, after
+/// hastinbe/w2r-mod-loader#3); the w2r-abi this workspace pins predates it.
+type ColorEditFn = unsafe extern "C" fn(*mut c_void, W2rStr, *mut u8) -> i32;
+
+/// `W2rUi` as far as `color_edit`.
+#[repr(C)]
+struct UiWithColor {
+    base: W2rUi,
+    color_edit: ColorEditFn,
+}
+
+/// The host's `color_edit`, when its widget table is long enough to have one.
+fn color_edit_of(ui: &W2rUi) -> Option<ColorEditFn> {
+    if (ui.struct_size as usize) < core::mem::size_of::<UiWithColor>() {
+        return None;
+    }
+    // SAFETY: the host says its table is at least this long, and the field is appended after the
+    // ones `W2rUi` declares.
+    Some(unsafe { (*(ui as *const W2rUi).cast::<UiWithColor>()).color_edit })
+}
+
 /// What Allied Minimap Colors reads and writes.
 struct Minimap {
     live: *mut u8,
@@ -959,9 +982,31 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
                 "Also in Options > Unit Color: color pickers and the Color Profile list.",
             );
         }
-        // Text boxes until the host offers a color swatch for plugin cards. The options screen's
-        // pickers show a change made here the next time it opens.
-        if edits {
+        // Color swatches when the host offers them, else text boxes. The options screen's pickers
+        // show a change made here the next time it opens.
+        if let Some(color_edit) = color_edit_of(ui) {
+            label(
+                ui,
+                "Click a color to change it. Picking the game's own color leaves it unchanged.",
+            );
+            let in_use = colors();
+            let stock = stock();
+            for i in 0..PLAYERS {
+                let caption = format!("Player {} ({})", i + 1, model::NAMES[i]);
+                let mut hex = [0u8; 7];
+                let shown = model::to_setting(in_use[i].unwrap_or(stock[i]));
+                hex[..6].copy_from_slice(&shown.as_bytes()[..6]);
+                if color_edit(ui.ctx, s(&caption), hex.as_mut_ptr()) != 0 {
+                    let picked = String::from_utf8_lossy(&hex[..6]).into_owned();
+                    let mut next = colors();
+                    next[i] = model::wanted(&picked, stock[i]);
+                    set_colors(next);
+                    refill(page, &next);
+                    sync_choice(&page.profiles);
+                    page.status = format!("{}: #{}", model::NAMES[i], picked.to_ascii_uppercase());
+                }
+            }
+        } else if edits {
             label(ui, "Type #RRGGBB, or clear a box for the game's own color.");
             for i in 0..PLAYERS {
                 let caption = format!("Player {} ({})", i + 1, model::NAMES[i]);

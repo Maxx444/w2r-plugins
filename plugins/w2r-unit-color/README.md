@@ -45,7 +45,7 @@ change the dropdown and a picker in the same visit, the profile wins.
 | Row | What it does |
 |---|---|
 | `>> IN USE: ... <<` | The profile whose colors are in use, "Game default", or "Custom colors". |
-| `Player 1 (Red)` .. `Player 8 (Yellow)` | The color in use for that team as `#RRGGBB`, the same value the Options picker shows. Type a new one to apply it at once; clear the box for the game's own color. The Options pickers show a change the next time the screen opens. (Text boxes until the host offers a color swatch for plugin cards.) |
+| `Player 1 (Red)` .. `Player 8 (Yellow)` | One row per team color: on a W2R Mod Loader with card color rows (Maxx444's personal loader, branch `personal/card-color-swatches`), a swatch and a `#rrggbb` button that opens the same color editor as Options; otherwise a text box with `#RRGGBB` (type a new one to apply it at once; clear the box for the game's own color). Picking the game's own color leaves that team unchanged. The Options pickers show a change the next time the screen opens. |
 | `Profile` + `Apply profile` | Game default, then every profile in `color_profiles.json`, including ones added since the game started. |
 | `Profile name`, `Save current colors as this profile` | Saves the colors in use into `color_profiles.json`, replacing a profile of the same name. Moving the slider fills in that profile's name. |
 | `Delete this profile` | Asks "Delete "name"? This cannot be undone." for the profile chosen with the slider, then `Yes, delete it` removes it from `color_profiles.json` and `No, keep it` does nothing. The colors in use are not changed. |
