@@ -109,11 +109,12 @@ pub const SAVE_KEY: &str = "save_profile";
 pub const NAME_KEY: &str = "profile_name";
 pub const AUTHOR_KEY: &str = "profile_author";
 
-/// The dropdown's labels for `profiles` ("name by author", cut to the host's 64 bytes).
+/// The dropdown's labels for `profiles`: the name only (the dropdown is too narrow for
+/// "name by author"; the author shows in the Author field), cut to the host's 64 bytes.
 pub fn choice_labels(profiles: &[Profile]) -> Vec<String> {
     let mut out = vec!["Custom".to_string(), "Game default".to_string()];
     for p in profiles.iter().take(MAX_LISTED) {
-        let mut label = title(p);
+        let mut label = p.name.clone();
         label.truncate(MAX_CHOICE_LABEL); // ASCII only (clean_name), so any cut is on a boundary
         out.push(label.trim_end().to_string());
     }
@@ -373,7 +374,7 @@ mod tests {
         let labels = choice_labels(&d);
         assert_eq!(labels[0], "Custom");
         assert_eq!(labels[1], "Game default");
-        assert_eq!(labels[3], "Classic by Blizzard Entertainment");
+        assert_eq!(labels[3], "Classic");
         assert!(labels.iter().all(|l| l.len() <= 64 && !l.is_empty()));
         let many: Vec<Profile> = (0..30)
             .map(|i| Profile {

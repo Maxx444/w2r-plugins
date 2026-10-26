@@ -14,7 +14,7 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
 **Options > Unit Color** (needs a W2R Mod Loader with the options screen):
 
 - **Profile (Reopen to See Colors) > Color Profile:** a dropdown with Custom, Game default, then the
-  profiles in `color_profiles.ini` (up to 14) as they were when the game started. Choose one and
+  profiles in `color_profiles.ini` (up to 14, by name) as they were when the game started. Choose one and
   press Apply. It shows the profile whose colors are in use, or Custom once you change a color by
   hand.
 - **Save Profile:** check **Save Colors as Profile on Apply**, fill in **Profile Name** (and
