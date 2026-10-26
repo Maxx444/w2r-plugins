@@ -11,26 +11,34 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
 
 ## Settings
 
-**Options > Unit Color**, under Player Colors (needs a W2R Mod Loader with the options screen): one color
-picker per team color, `Player 1 (Red)` .. `Player 8 (Yellow)`. Each shows a swatch and its hex
-value; the button opens the color editor with the new and the current color side by side. Applied
-with the screen's Apply or Save and Exit. Picking the game's own color means no change for that
-team.
+**Options > Unit Color** (needs a W2R Mod Loader with the options screen):
 
-**The plugin's card** (title screen > Manage):
+- **Profile > Color Profile:** a dropdown with Custom, Game default, then the profiles in
+  `color_profiles.ini` (up to 14) as they were when the game started. Choose one and press Apply.
+  It shows the profile whose colors are in use, or Custom once you change a color by hand.
+- **Player Colors:** one color picker per team color, `Player 1 (Red)` .. `Player 8 (Yellow)`. Each
+  shows a swatch and its hex value; the button opens the color editor with the new and the current
+  color side by side. Picking the game's own color means no change for that team.
+
+Choosing a profile and pressing Apply changes the colors, but the pickers show them only the next
+time you open the screen (the screen does not let a plugin change a row while it is open). If you
+change the dropdown and a picker in the same visit, the profile wins.
+
+**The plugin's card** (title screen > Manage), for what the options screen cannot do:
 
 | Row | What it does |
 |---|---|
 | `>> IN USE: ... <<` | The profile whose colors are in use ("name by author"), "Game default", or "Custom colors". |
-| `Profile` + `Apply profile` | Game default, then every profile in `color_profiles.ini`. |
+| `Profile` + `Apply profile` | Game default, then every profile in `color_profiles.ini`, including ones added since the game started. |
 | `Profile name`, `Author`, `Save current colors as this profile` | Saves the colors in use into `color_profiles.ini`, replacing a profile of the same name. Moving the slider fills both boxes with that profile's name and author. |
-| `Reload color_profiles.ini` | Reads the file again after you edit it; new and changed profiles show at once, no restart. |
+| `Reload color_profiles.ini` | Reads the file again after you edit it; the card's list updates at once, the Options dropdown at the next start. |
 | `Reset all to game default` | Clears every color. |
 
 On an older W2R Mod Loader without the options screen, the card also has one `#RRGGBB` box per
 team color instead of the pickers.
 
-The colors are kept as `color1` .. `color8` in the plugin's settings (`rrggbb`).
+The colors are kept as `color1` .. `color8` (`rrggbb`) and the dropdown as `profile` in the
+plugin's settings.
 
 ## `color_profiles.ini`
 

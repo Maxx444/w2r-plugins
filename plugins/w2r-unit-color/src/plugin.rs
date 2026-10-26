@@ -36,6 +36,7 @@ const NAME_CAP: usize = model::MAX_NAME + 1;
 
 /// Where the colour pickers appear on the options screen.
 const CATEGORY: &str = "Unit Color";
+const PROFILE_SUBCATEGORY: &str = "Profile";
 const SUBCATEGORY: &str = "Player Colors";
 
 type MenuButtonsFn = unsafe extern "C" fn(i32);
@@ -88,6 +89,11 @@ static COLORS: Mutex<Colors> = Mutex::new([None; PLAYERS]);
 static STOCK: Mutex<[Rgb; PLAYERS]> = Mutex::new(model::REMASTERED);
 /// Whether the options screen shows the colour pickers (the host took the declarations).
 static DECLARED: AtomicBool = AtomicBool::new(false);
+/// The profile names in the options screen's dropdown (after Custom and Game default), as they
+/// were at load; the host does not let a dropdown's list change later.
+static LISTED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// The dropdown index last stored, to tell a new pick from a colour edit on Apply.
+static LAST_CHOICE: Mutex<i64> = Mutex::new(model::CHOICE_GAME_DEFAULT);
 static SLOTS: Mutex<[Slot; PLAYERS]> = Mutex::new([EMPTY_SLOT; PLAYERS]);
 static PAGE: Mutex<Option<Page>> = Mutex::new(None);
 
@@ -189,14 +195,64 @@ fn set_colors(next: Colors) {
     *COLORS.lock().unwrap_or_else(|e| e.into_inner()) = next;
 }
 
-/// Declares the eight colour pickers for the options screen; false on an older host or if the
-/// host refused one (it logs which).
-fn declare(stock: &[Rgb; PLAYERS]) -> bool {
+/// One declaration with every field the kind does not use left empty.
+fn def(kind: u32, key: &str, label: &str, description: &str, subcategory: &str) -> W2rSettingDef {
+    W2rSettingDef {
+        struct_size: W2R_SETTING_DEF_V1_SIZE,
+        kind,
+        default_int: 0,
+        min: 0,
+        max: 0,
+        flags: 0,
+        choice_count: 0,
+        choices: core::ptr::null(),
+        reserved: 0,
+        key: s(key),
+        label: s(label),
+        description: s(description),
+        category: s(CATEGORY),
+        subcategory: s(subcategory),
+        default_str: s(""),
+        active_when: s(""),
+    }
+}
+
+/// Declares the profile dropdown and the eight colour pickers for the options screen; false on
+/// an older host or if the host refused one (it logs which).
+fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
     let Some(h) = host() else { return false };
     if h.struct_size < W2R_HOST_SETTINGS_DECLARE_SIZE {
         return false;
     }
     let mut all = true;
+    let mut submit = |d: &W2rSettingDef, key: &str| {
+        let st = unsafe { (h.settings_declare)(h.token, d) };
+        if st != W2R_OK {
+            log(W2R_LOG_WARN, &format!("declaring {key}: status {st}"));
+            all = false;
+        }
+    };
+
+    // The dropdown: its labels must outlive the call only, so they live on this stack frame.
+    let labels = model::choice_labels(profiles);
+    let strs: Vec<W2rStr> = labels.iter().map(|l| s(l)).collect();
+    let mut d = def(
+        W2R_SETTING_CHOICE,
+        model::PROFILE_KEY,
+        "Color Profile",
+        "Applies a profile from color_profiles.ini. The list is read when the game starts.",
+        PROFILE_SUBCATEGORY,
+    );
+    d.default_int = model::CHOICE_GAME_DEFAULT;
+    d.choices = strs.as_ptr();
+    d.choice_count = strs.len() as u32;
+    submit(&d, model::PROFILE_KEY);
+    *LISTED.lock().unwrap_or_else(|e| e.into_inner()) = profiles
+        .iter()
+        .take(model::MAX_LISTED)
+        .map(|p| p.name.clone())
+        .collect();
+
     for (i, rgb) in stock.iter().enumerate() {
         let key = model::key(i);
         let label = format!("Player {} ({})", i + 1, model::NAMES[i]);
@@ -205,31 +261,42 @@ fn declare(stock: &[Rgb; PLAYERS]) -> bool {
             model::NAMES[i]
         );
         let default = model::to_setting(*rgb);
-        let def = W2rSettingDef {
-            struct_size: W2R_SETTING_DEF_V1_SIZE,
-            kind: W2R_SETTING_COLOR,
-            default_int: 0,
-            min: 0,
-            max: 0,
-            flags: 0,
-            choice_count: 0,
-            choices: core::ptr::null(),
-            reserved: 0,
-            key: s(&key),
-            label: s(&label),
-            description: s(&description),
-            category: s(CATEGORY),
-            subcategory: s(SUBCATEGORY),
-            default_str: s(&default),
-            active_when: s(""),
-        };
-        let st = unsafe { (h.settings_declare)(h.token, &def) };
-        if st != W2R_OK {
-            log(W2R_LOG_WARN, &format!("declaring {key}: status {st}"));
-            all = false;
-        }
+        let mut d = def(W2R_SETTING_COLOR, &key, &label, &description, SUBCATEGORY);
+        d.default_str = s(&default);
+        submit(&d, &key);
     }
     all
+}
+
+/// Stores the dropdown index that describes the colours in use, so the options screen shows the
+/// right entry the next time it opens.
+fn sync_choice(profiles: &[Profile]) {
+    if !DECLARED.load(Ordering::Relaxed) {
+        return;
+    }
+    let cur = colors();
+    let matched = model::matching(profiles, &cur, &stock()).map(|p| p.name.as_str());
+    let listed = LISTED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let index = model::choice_for(&listed, cur == [None; PLAYERS], matched);
+    let mut last = LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner());
+    if *last != index {
+        if let Some(h) = host() {
+            unsafe { (h.settings_set_i64)(h.token, s(model::PROFILE_KEY), index) };
+        }
+        *last = index;
+    }
+}
+
+/// The dropdown index stored now (the options screen writes it on Apply).
+fn stored_choice() -> i64 {
+    let Some(h) = host() else {
+        return model::CHOICE_CUSTOM;
+    };
+    let mut v = model::CHOICE_CUSTOM;
+    if unsafe { (h.settings_get_i64)(h.token, s(model::PROFILE_KEY), &mut v) } != W2R_OK {
+        return model::CHOICE_CUSTOM;
+    }
+    v
 }
 
 // ---- the profiles file -----------------------------------------------------------------------
@@ -520,6 +587,7 @@ unsafe fn button(ui: &W2rUi, text: &str) -> bool {
 fn choose(page: &mut Page, c: Colors) {
     set_colors(c);
     refill(page, &c);
+    sync_choice(&page.profiles);
 }
 
 /// Saves the colours in use as a profile named by the name and author boxes.
@@ -545,6 +613,7 @@ fn save_current(page: &mut Page) -> String {
     if let Some(i) = page.profiles.iter().position(|o| o.name == name) {
         page.selected = i as i32 + 1;
     }
+    sync_choice(&page.profiles);
     format!("Saved {title} to {PROFILES_FILE}")
 }
 
@@ -555,7 +624,10 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         label(ui, &format!(">>  IN USE:  {}  <<", in_use(page)));
 
         if DECLARED.load(Ordering::Relaxed) {
-            label(ui, "Edit each color in Options > Unit Color.");
+            label(
+                ui,
+                "Colors and Color Profile: Options > Unit Color (its profile list is read at game start).",
+            );
         } else if edits {
             for i in 0..PLAYERS {
                 let caption = format!(
@@ -570,6 +642,7 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
                             let mut next = colors();
                             next[i] = c;
                             set_colors(next);
+                            sync_choice(&page.profiles);
                             page.status.clear();
                         }
                         Err(model::NotAColor) => {
@@ -647,13 +720,46 @@ unsafe extern "C" fn on_event(event: *const W2rEvent) {
             return;
         };
         if event.id == W2R_EVT_SETTINGS_CHANGED {
-            let next = load_colors();
-            *COLORS.lock().unwrap_or_else(|e| e.into_inner()) = next;
-            if let Some(page) = PAGE.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
-                refill(page, &next);
-            }
+            settings_changed();
         }
     }));
+}
+
+/// After Apply on the options screen. A new pick in the profile dropdown wins over colour edits
+/// made in the same visit (the screen cannot show a profile's colours until it is opened again);
+/// otherwise the colours are taken as edited and the dropdown is set to what they match.
+fn settings_changed() {
+    let mut guard = PAGE.lock().unwrap_or_else(|e| e.into_inner());
+    let page = guard.get_or_insert_with(new_page);
+    let picked = stored_choice();
+    let last = *LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner());
+    let listed = LISTED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let profile = if picked != last {
+        model::choice_target(&listed, picked)
+    } else {
+        None
+    };
+    let next = match profile {
+        Some(None) => [None; PLAYERS],
+        Some(Some(name)) => match page
+            .profiles
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+        {
+            Some(p) => p.colors,
+            None => {
+                page.status = format!("{name} is no longer in {PROFILES_FILE}");
+                log(W2R_LOG_WARN, &page.status);
+                load_colors()
+            }
+        },
+        None => load_colors(),
+    };
+    // The screen just stored the index it shows; start from that so a later sync compares right.
+    *LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner()) = picked;
+    set_colors(next);
+    refill(page, &next);
+    sync_choice(&page.profiles);
 }
 
 // ---- load and unload -------------------------------------------------------------------------
@@ -685,14 +791,19 @@ unsafe fn load(host: *const W2rHost) -> W2rStatus {
     // The stock colours first: they are the pickers' defaults and mean "no change".
     let stock = read_stock(game);
     *STOCK.lock().unwrap_or_else(|e| e.into_inner()) = stock;
+    // Reads (or creates) color_profiles.ini now: the dropdown lists its profiles, and a broken
+    // file shows in the log at start.
+    let page = new_page();
+    log(W2R_LOG_INFO, &page.status);
     // Declarations are only accepted while on_load runs.
-    DECLARED.store(declare(&stock), Ordering::Relaxed);
+    DECLARED.store(declare(&stock, &page.profiles), Ordering::Relaxed);
+    *LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner()) = stored_choice();
     let wanted = load_colors();
     // Rewrite anything stored in another form (`#RRGGBB` from 0.1.0) the way the picker stores it.
     set_colors(wanted);
-    // Reads (or creates) color_profiles.ini now, so a broken file shows in the log at start.
-    let page = new_page();
-    log(W2R_LOG_INFO, &page.status);
+    sync_choice(&page.profiles);
+    let mut page = page;
+    refill(&mut page, &wanted);
     *PAGE.lock().unwrap_or_else(|e| e.into_inner()) = Some(page);
     let Some(h) = self::host() else {
         return W2R_E_STATE;

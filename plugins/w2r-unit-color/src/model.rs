@@ -92,6 +92,53 @@ pub fn title(p: &Profile) -> String {
     }
 }
 
+/// The options screen's profile dropdown: `Custom`, `Game default`, then the profiles as they
+/// were when the game started (the host fixes a dropdown's list at load).
+pub const CHOICE_CUSTOM: i64 = 0;
+pub const CHOICE_GAME_DEFAULT: i64 = 1;
+/// Most entries a dropdown may have (`W2R_MAX_SETTING_CHOICE_COUNT`), and so most profiles listed.
+pub const MAX_CHOICES: usize = 16;
+pub const MAX_LISTED: usize = MAX_CHOICES - 2;
+/// Longest dropdown label the host accepts.
+const MAX_CHOICE_LABEL: usize = 64;
+/// Settings key of the dropdown (an index).
+pub const PROFILE_KEY: &str = "profile";
+
+/// The dropdown's labels for `profiles` ("name by author", cut to the host's 64 bytes).
+pub fn choice_labels(profiles: &[Profile]) -> Vec<String> {
+    let mut out = vec!["Custom".to_string(), "Game default".to_string()];
+    for p in profiles.iter().take(MAX_LISTED) {
+        let mut label = title(p);
+        label.truncate(MAX_CHOICE_LABEL); // ASCII only (clean_name), so any cut is on a boundary
+        out.push(label.trim_end().to_string());
+    }
+    out
+}
+
+/// The dropdown index that describes the colours in use: Game default when nothing is changed,
+/// the listed profile (by name) that matches, or Custom.
+pub fn choice_for(listed: &[String], all_default: bool, matched: Option<&str>) -> i64 {
+    if all_default {
+        return CHOICE_GAME_DEFAULT;
+    }
+    matched
+        .and_then(|name| listed.iter().position(|n| n.eq_ignore_ascii_case(name)))
+        .map_or(CHOICE_CUSTOM, |i| i as i64 + 2)
+}
+
+/// What choosing dropdown entry `index` asks for: `Some(None)` the game's own colours,
+/// `Some(Some(name))` the profile listed at launch under that name, `None` nothing (Custom, or an
+/// index out of range).
+pub fn choice_target(listed: &[String], index: i64) -> Option<Option<&str>> {
+    match index {
+        CHOICE_GAME_DEFAULT => Some(None),
+        i if i >= 2 => listed
+            .get(usize::try_from(i - 2).ok()?)
+            .map(|n| Some(n.as_str())),
+        _ => None,
+    }
+}
+
 /// Parses `#RRGGBB` or `RRGGBB` (surrounding spaces allowed, any case).
 pub fn parse_hex(text: &str) -> Option<Rgb> {
     let t = text.trim();
@@ -308,6 +355,49 @@ mod tests {
     fn stock_falls_back_when_unread() {
         assert_eq!(stock_or_default([[0; 3]; PLAYERS]), REMASTERED);
         assert_eq!(stock_or_default(CLASSIC), CLASSIC);
+    }
+
+    #[test]
+    fn dropdown_labels_fit() {
+        let mut d = default_profiles();
+        d.push(Profile {
+            name: "x".repeat(40),
+            author: "y".repeat(40),
+            colors: [None; PLAYERS],
+        });
+        let labels = choice_labels(&d);
+        assert_eq!(labels[0], "Custom");
+        assert_eq!(labels[1], "Game default");
+        assert_eq!(labels[3], "Classic by Blizzard Entertainment");
+        assert!(labels.iter().all(|l| l.len() <= 64 && !l.is_empty()));
+        let many: Vec<Profile> = (0..30)
+            .map(|i| Profile {
+                name: format!("p{i}"),
+                author: String::new(),
+                colors: [None; PLAYERS],
+            })
+            .collect();
+        assert_eq!(choice_labels(&many).len(), MAX_CHOICES);
+    }
+
+    #[test]
+    fn dropdown_index_round_trips() {
+        let listed = vec!["Remastered".to_string(), "Classic".to_string()];
+        assert_eq!(
+            choice_for(&listed, true, Some("Remastered")),
+            CHOICE_GAME_DEFAULT
+        );
+        assert_eq!(choice_for(&listed, false, Some("classic")), 3);
+        assert_eq!(
+            choice_for(&listed, false, Some("Added later")),
+            CHOICE_CUSTOM
+        );
+        assert_eq!(choice_for(&listed, false, None), CHOICE_CUSTOM);
+        assert_eq!(choice_target(&listed, 3), Some(Some("Classic")));
+        assert_eq!(choice_target(&listed, CHOICE_GAME_DEFAULT), Some(None));
+        assert_eq!(choice_target(&listed, CHOICE_CUSTOM), None);
+        assert_eq!(choice_target(&listed, 9), None);
+        assert_eq!(choice_target(&listed, -4), None);
     }
 
     #[test]
