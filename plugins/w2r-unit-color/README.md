@@ -13,15 +13,25 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
 
 **Options > Unit Color** (needs a W2R Mod Loader with the options screen):
 
-- **Reopen the Menu to see APPLIED > Color Profile:** a dropdown with Custom, Game default, then the
-  profiles in `color_profiles.json` (up to 14, by name) as they were when the game started. Choose one and
-  press Apply. It shows the profile whose colors are in use, or Custom once you change a color by
-  hand.
-- **Save Profile:** check **Save Colors as Profile on Apply**, fill in **Profile Name**, then
-  press Apply: the colors below are saved to `color_profiles.json`, replacing a profile of the same
-  name, and the box clears itself. Choosing a profile fills in its name, so editing one is: choose
-  it, Apply, reopen, change colors, check Save, Apply.
-  A new name joins the dropdown at the next start (the card's list has it at once).
+- **Reopen the Menu to see APPLIED > Color Profile:** a dropdown with **Custom** and **Game
+  default**, then the profiles in `color_profiles.json` by name, as they were when the game
+  started. Choose one and press Apply. It shows the profile whose colors are in use, or Custom once
+  you change a color by hand.
+  - **The dropdown lists up to 14 profiles** (the host allows 16 entries, and Custom and Game
+    default take two). The four profiles the plugin starts with count toward the 14. Profiles after
+    the 14th stay in the file and can be applied from the plugin card; the file holds up to 64.
+- **Save or Delete Profile:**
+  - **Profile Name:** the profile to save or delete. Choosing a profile fills it in the next time
+    the screen opens.
+  - **Save Colors as Profile on Apply:** check it and press Apply: the colors below are saved under
+    that name, replacing a profile of the same name. Editing a profile is: choose it, Apply, reopen,
+    change colors, check Save, Apply.
+  - **Delete This Profile on Apply** and **Yes, Delete It (Cannot Be Undone):** check both and press
+    Apply to remove the profile named above. Delete alone does nothing (the "Yes" box is greyed
+    until it is checked), and Save with Delete does nothing either. The colors in use are not
+    changed.
+  - The boxes clear themselves after Apply. A saved or deleted profile joins or leaves the dropdown
+    at the next start (the card's list changes at once).
 - **Player Colors:** one color picker per team color, `Player 1 (Red)` .. `Player 8 (Yellow)`. Each
   shows a swatch and its hex value; the button opens the color editor with the new and the current
   color side by side. Picking the game's own color means no change for that team.
@@ -38,6 +48,7 @@ above the dropdown says so. If you change the dropdown and a picker in the same 
 | `Player 1 (Red)` .. `Player 8 (Yellow)` | The color in use for that team as `#RRGGBB`, the same value the Options picker shows. Type a new one to apply it at once; clear the box for the game's own color. The Options pickers show a change the next time the screen opens. (Text boxes until the host offers a color swatch for plugin cards.) |
 | `Profile` + `Apply profile` | Game default, then every profile in `color_profiles.json`, including ones added since the game started. |
 | `Profile name`, `Save current colors as this profile` | Saves the colors in use into `color_profiles.json`, replacing a profile of the same name. Moving the slider fills in that profile's name. |
+| `Delete this profile` | Asks "Delete "name"? This cannot be undone." for the profile chosen with the slider, then `Yes, delete it` removes it from `color_profiles.json` and `No, keep it` does nothing. The colors in use are not changed. |
 | `Reload color_profiles.json` | Reads the file again after you edit it; the card's list updates at once, the Options dropdown at the next start. |
 | `Reset all to game default` | Clears every color. |
 
