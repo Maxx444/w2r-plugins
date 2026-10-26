@@ -6,7 +6,7 @@
 //! crash guard, docs/abi.md).
 //!
 //! On a host with declared settings, the eight colours are colour pickers on the options screen
-//! (Accessibility > Unit Colors). The plugin's card in the plugin manager picks, saves and reloads
+//! (Unit Color > Player Colors). The plugin's card in the plugin manager picks, saves and reloads
 //! the profiles in `color_profiles.ini`, which lives in the plugin's own data folder, the only
 //! folder a plugin can write (docs/abi.md, `data_open`). On an older host the card also has one
 //! text box per colour.
@@ -35,8 +35,8 @@ const HEX_CAP: usize = 16;
 const NAME_CAP: usize = model::MAX_NAME + 1;
 
 /// Where the colour pickers appear on the options screen.
-const CATEGORY: &str = "Accessibility";
-const SUBCATEGORY: &str = "Unit Colors";
+const CATEGORY: &str = "Unit Color";
+const SUBCATEGORY: &str = "Player Colors";
 
 type MenuButtonsFn = unsafe extern "C" fn(i32);
 
@@ -555,10 +555,7 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         label(ui, &format!(">>  IN USE:  {}  <<", in_use(page)));
 
         if DECLARED.load(Ordering::Relaxed) {
-            label(
-                ui,
-                "Edit each color in Options > Accessibility > Unit Colors.",
-            );
+            label(ui, "Edit each color in Options > Unit Color.");
         } else if edits {
             for i in 0..PLAYERS {
                 let caption = format!(
