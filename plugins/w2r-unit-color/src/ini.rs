@@ -1,4 +1,5 @@
-//! `color_profiles.ini`: the player's color profiles, one section per profile.
+//! The old `color_profiles.ini` (sections of `playerN = #RRGGBB`), read once to convert it to
+//! `color_profiles.json` when only the old file exists. Nothing writes this format any more.
 //!
 //! ```ini
 //! [Classic Colors + Black 2 Pink]
@@ -6,12 +7,8 @@
 //! player1 = #A40000 ; Red
 //! player6 = #FF00FF ; Black
 //! ```
-//!
-//! The section name is the profile name. `playerN` (1 Red .. 8 Yellow) is `#RRGGBB`; a player that
-//! is missing, empty or `-` keeps the game's own color. Lines starting with `;` or `#` are comments,
-//! and a `;` after a color starts a comment too. Unknown keys are ignored so the file can grow.
 
-use crate::model::{self, MAX_PROFILES, NAMES, PLAYERS, Profile};
+use crate::model::{self, MAX_PROFILES, PLAYERS, Profile};
 
 /// Why one line of the file was skipped; the rest of the file still loads.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +57,7 @@ pub fn parse(text: &str) -> (Vec<Profile>, Vec<Warning>) {
                     name,
                     author: String::new(),
                     colors: [None; PLAYERS],
+                    extra: Vec::new(),
                 });
             }
             continue;
@@ -95,51 +93,10 @@ fn player_index(key: &str) -> Option<usize> {
     (1..=PLAYERS).contains(&n).then(|| n - 1)
 }
 
-const HEADER: &str = "\
-; Color profiles for the Unit Color plugin (w2r-unit-color).
-;
-; One [section] per profile; the section name is the profile name shown in the
-; options menu, with its author. playerN is the color of player N's team color
-; (1 Red, 2 Blue, 3 Teal, 4 Violet, 5 Orange, 6 Black, 7 White, 8 Yellow) as
-; #RRGGBB. Leave a player out, empty or \"-\" to keep the game's own color.
-; Edit this file freely; press Reload in the options menu to see the changes.
-";
-
-/// The whole file for `profiles`, header comment included.
-pub fn write(profiles: &[Profile]) -> String {
-    let mut out = String::from(HEADER);
-    for p in profiles {
-        out.push('\n');
-        out.push_str(&format!("[{}]\n", model::clean_name(&p.name, "Profile")));
-        out.push_str(&format!("author = {}\n", p.author));
-        for (i, c) in p.colors.iter().enumerate() {
-            let value = c.map_or_else(|| "-".to_string(), model::to_hex);
-            out.push_str(&format!("player{} = {value:<7} ; {}\n", i + 1, NAMES[i]));
-        }
-    }
-    out
-}
-
-/// `profiles` with `p` added, or replacing the profile of the same name (ignoring case).
-pub fn upsert(profiles: &mut Vec<Profile>, p: Profile) -> Result<(), &'static str> {
-    if let Some(old) = profiles
-        .iter_mut()
-        .find(|o| o.name.eq_ignore_ascii_case(&p.name))
-    {
-        *old = p;
-        Ok(())
-    } else if profiles.len() >= MAX_PROFILES {
-        Err("too many profiles")
-    } else {
-        profiles.push(p);
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{BLACK, CLASSIC, default_profiles};
+    use crate::model::BLACK;
 
     const SAMPLE: &str = "\
 ; comment
@@ -178,46 +135,6 @@ just text
         assert_eq!(p[1].colors, [None; PLAYERS]);
         let lines: Vec<usize> = w.iter().map(|w| w.line).collect();
         assert_eq!(lines, vec![11, 14, 18, 20]);
-    }
-
-    #[test]
-    fn written_files_read_back() {
-        let profiles = default_profiles();
-        let text = write(&profiles);
-        let (back, warnings) = parse(&text);
-        assert!(warnings.is_empty(), "{warnings:?}");
-        assert_eq!(back, profiles);
-        assert!(text.contains("player1 = #A40000 ; Red"));
-    }
-
-    #[test]
-    fn names_with_brackets_survive() {
-        let p = Profile {
-            name: "a [b] c".into(),
-            author: "x".into(),
-            colors: CLASSIC.map(Some),
-        };
-        let (back, _) = parse(&write(std::slice::from_ref(&p)));
-        assert_eq!(back, vec![p]);
-    }
-
-    #[test]
-    fn upsert_replaces_by_name() {
-        let mut list = default_profiles();
-        let n = list.len();
-        let mut p = list[0].clone();
-        p.name = p.name.to_uppercase();
-        p.author = "me".into();
-        upsert(&mut list, p).unwrap();
-        assert_eq!(list.len(), n);
-        assert_eq!(list[0].author, "me");
-        let q = Profile {
-            name: "New".into(),
-            author: String::new(),
-            colors: [None; PLAYERS],
-        };
-        upsert(&mut list, q).unwrap();
-        assert_eq!(list.len(), n + 1);
     }
 
     #[test]

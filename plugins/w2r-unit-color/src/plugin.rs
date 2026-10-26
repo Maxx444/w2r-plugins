@@ -7,7 +7,7 @@
 //!
 //! On a host with declared settings, the eight colours are colour pickers on the options screen
 //! (Unit Color > Player Colors). The plugin's card in the plugin manager picks, saves and reloads
-//! the profiles in `color_profiles.ini`, which lives in the plugin's own data folder, the only
+//! the profiles in `color_profiles.json`, which lives in the plugin's own data folder, the only
 //! folder a plugin can write (docs/abi.md, `data_open`). On an older host the card also has one
 //! text box per colour.
 
@@ -18,8 +18,8 @@ use std::sync::{Mutex, OnceLock};
 
 use w2r_abi::*;
 
-use crate::ini;
 use crate::model::{self, Colors, PLAYERS, Profile, RAMP, Rgb};
+use crate::{ini, profiles};
 
 /// Bytes per render palette entry (RGBA).
 const PALETTE_STRIDE: usize = 4;
@@ -27,7 +27,9 @@ const PALETTE_STRIDE: usize = 4;
 const TABLE_STRIDE: usize = 4;
 
 /// The profiles file in the plugin's data folder.
-const PROFILES_FILE: &str = "color_profiles.ini";
+const PROFILES_FILE: &str = "color_profiles.json";
+/// The file earlier test builds wrote; converted once when only it exists.
+const OLD_PROFILES_FILE: &str = "color_profiles.ini";
 /// Largest file read (64 full profiles are about 20 KiB).
 const MAX_FILE: usize = 1 << 20;
 /// Edit buffers: `#RRGGBB` plus room for stray spaces; a profile name or author.
@@ -79,8 +81,10 @@ const EMPTY_SLOT: Slot = Slot {
 
 /// The plugin's card in the plugin manager.
 struct Page {
-    /// The profiles in `color_profiles.ini`, in file order.
+    /// The profiles in `color_profiles.json`, in file order.
     profiles: Vec<Profile>,
+    /// False while the file could not be read: saving would overwrite what is in it.
+    file_ok: bool,
     /// Slider position: 0 is "Game default", n is `profiles[n - 1]`.
     selected: i32,
     hex: [[u8; HEX_CAP]; PLAYERS],
@@ -269,7 +273,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         W2R_SETTING_BOOL,
         model::SAVE_KEY,
         "Save Colors as Profile on Apply",
-        "Check, fill in a name, then press Apply: the colors below are saved to color_profiles.ini, replacing a profile of the same name. A new name joins the Color Profile list at the next start.",
+        "Check, fill in a name, then press Apply: the colors below are saved to color_profiles.json, replacing a profile of the same name. A new name joins the Color Profile list at the next start.",
         SAVE_SUBCATEGORY,
     );
     submit(&d, model::SAVE_KEY);
@@ -396,45 +400,81 @@ fn write_file(name: &str, text: &str) -> Result<(), String> {
     }
 }
 
-/// Reads `color_profiles.ini`, creating it with the default profiles the first time. Returns the
-/// profiles and a status line.
-fn load_profiles() -> (Vec<Profile>, String) {
+/// What reading the profiles file gave: the profiles, a status line, and whether the file may be
+/// written (false when it exists but could not be read).
+struct Loaded {
+    profiles: Vec<Profile>,
+    note: String,
+    file_ok: bool,
+}
+
+/// Reads `color_profiles.json`. The first time, it is created from the old `color_profiles.ini`
+/// if that exists, and from the default profiles otherwise.
+fn load_profiles() -> Loaded {
     match read_file(PROFILES_FILE) {
-        Ok(Some(text)) => {
-            let (profiles, warnings) = ini::parse(&text);
-            for w in warnings.iter().take(5) {
-                log(
-                    W2R_LOG_WARN,
-                    &format!("{PROFILES_FILE} line {}: {}", w.line, w.what),
-                );
+        Ok(Some(text)) => match profiles::parse(&text) {
+            Ok((profiles, warnings)) => {
+                for w in warnings.iter().take(5) {
+                    log(
+                        W2R_LOG_WARN,
+                        &format!("{PROFILES_FILE} profile {}: {}", w.entry, w.what),
+                    );
+                }
+                let note = match warnings.first() {
+                    None => format!("{} profile(s) in {PROFILES_FILE}", profiles.len()),
+                    Some(w) => format!(
+                        "{} profile(s); skipped {}, first: profile {} ({})",
+                        profiles.len(),
+                        warnings.len(),
+                        w.entry,
+                        w.what
+                    ),
+                };
+                Loaded {
+                    profiles,
+                    note,
+                    file_ok: true,
+                }
             }
-            let note = match warnings.first() {
-                None => format!("{} profile(s) in {PROFILES_FILE}", profiles.len()),
-                Some(w) => format!(
-                    "{} profile(s); skipped {} line(s), first: line {} ({})",
-                    profiles.len(),
-                    warnings.len(),
-                    w.line,
-                    w.what
+            Err(e) => {
+                let note = format!("{PROFILES_FILE} could not be read ({e}); fix it, then Reload");
+                log(W2R_LOG_WARN, &note);
+                Loaded {
+                    profiles: Vec::new(),
+                    note,
+                    file_ok: false,
+                }
+            }
+        },
+        Ok(None) => {
+            let (profiles, from) = match read_file(OLD_PROFILES_FILE) {
+                Ok(Some(text)) => (ini::parse(&text).0, format!("from {OLD_PROFILES_FILE}")),
+                _ => (
+                    model::default_profiles(),
+                    "with the default profiles".to_string(),
                 ),
             };
-            (profiles, note)
-        }
-        Ok(None) => {
-            let profiles = model::default_profiles();
-            let note = match write_file(PROFILES_FILE, &ini::write(&profiles)) {
-                Ok(()) => format!("Created {PROFILES_FILE} with {} profiles", profiles.len()),
+            let note = match save_profiles(&profiles) {
+                Ok(()) => format!("Created {PROFILES_FILE} {from} ({})", profiles.len()),
                 Err(e) => e,
             };
-            (profiles, note)
+            Loaded {
+                profiles,
+                note,
+                file_ok: true,
+            }
         }
-        Err(e) => (Vec::new(), e),
+        Err(e) => Loaded {
+            profiles: Vec::new(),
+            note: e,
+            file_ok: false,
+        },
     }
 }
 
-/// Writes `profiles` to `color_profiles.ini`.
+/// Writes `profiles` to `color_profiles.json`.
 fn save_profiles(profiles: &[Profile]) -> Result<(), String> {
-    write_file(PROFILES_FILE, &ini::write(profiles))
+    write_file(PROFILES_FILE, &profiles::write(profiles))
 }
 
 /// Reads the game's own colours from the HD table. Called in `on_load`, before the tick has
@@ -557,10 +597,13 @@ fn text_of(buf: &[u8]) -> String {
     String::from_utf8_lossy(&buf[..n]).into_owned()
 }
 
-/// Shows `c` in the colour boxes (older hosts only draw them).
+/// Shows the colours in use in the card's boxes: the chosen colour, or the game's own where
+/// there is none, as the options screen does. (Not called while the player types, so a box can be
+/// emptied.)
 fn refill(page: &mut Page, c: &Colors) {
-    for (buf, rgb) in page.hex.iter_mut().zip(c) {
-        fill(buf, &rgb.map(model::to_hex).unwrap_or_default());
+    let stock = stock();
+    for ((buf, rgb), own) in page.hex.iter_mut().zip(c).zip(stock) {
+        fill(buf, &model::to_hex(rgb.unwrap_or(own)));
     }
 }
 
@@ -592,9 +635,11 @@ fn in_use(page: &Page) -> String {
 }
 
 fn new_page() -> Page {
-    let (profiles, status) = load_profiles();
+    let loaded = load_profiles();
+    let status = loaded.note;
     let mut page = Page {
-        profiles,
+        profiles: loaded.profiles,
+        file_ok: loaded.file_ok,
         selected: 0,
         hex: [[0; HEX_CAP]; PLAYERS],
         name: [0; NAME_CAP],
@@ -635,15 +680,26 @@ fn save_current(page: &mut Page) -> String {
     if name.is_empty() {
         return "Type a profile name first".into();
     }
+    if !page.file_ok {
+        return format!("Not saved: {PROFILES_FILE} could not be read; fix it, then Reload");
+    }
+    // Saving over a profile keeps the fields this plugin does not use (highlights, bars).
+    let extra = page
+        .profiles
+        .iter()
+        .find(|o| o.name.eq_ignore_ascii_case(&name))
+        .map(|o| o.extra.clone())
+        .unwrap_or_default();
     let p = Profile {
         name: name.clone(),
         author: model::clean_name(&text_of(&page.author), ""),
         colors: colors(),
+        extra,
     };
     let title = model::title(&p);
     let (p_name, p_author) = (p.name.clone(), p.author.clone());
     let mut next = page.profiles.clone();
-    if let Err(e) = ini::upsert(&mut next, p) {
+    if let Err(e) = profiles::upsert(&mut next, p) {
         return format!("Not saved: {e}");
     }
     if let Err(e) = save_profiles(&next) {
@@ -673,12 +729,9 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         // Text boxes until the host offers a color swatch for plugin cards. The options screen's
         // pickers show a change made here the next time it opens.
         if edits {
+            label(ui, "Type #RRGGBB, or clear a box for the game's own color.");
             for i in 0..PLAYERS {
-                let caption = format!(
-                    "Player {} {} (#RRGGBB, empty = game default)",
-                    i + 1,
-                    model::NAMES[i]
-                );
+                let caption = format!("Player {} ({})", i + 1, model::NAMES[i]);
                 let buf = &mut page.hex[i];
                 if (ui.text_edit)(ui.ctx, s(&caption), buf.as_mut_ptr(), HEX_CAP as u32) != 0 {
                     match model::parse_entry(&text_of(buf)) {
@@ -702,7 +755,7 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             );
         }
 
-        // Profiles: 0 is the game's own colours, then color_profiles.ini in file order. Reload
+        // Profiles: 0 is the game's own colours, then color_profiles.json in file order. Reload
         // re-reads the file, so edits show here at once.
         let last = page.profiles.len() as i32;
         page.selected = page.selected.clamp(0, last);
@@ -731,10 +784,11 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             }
         }
 
-        if button(ui, "Reload color_profiles.ini") {
-            let (profiles, note) = load_profiles();
-            page.profiles = profiles;
-            page.status = note;
+        if button(ui, &format!("Reload {PROFILES_FILE}")) {
+            let loaded = load_profiles();
+            page.profiles = loaded.profiles;
+            page.file_ok = loaded.file_ok;
+            page.status = loaded.note;
         }
         if button(ui, "Reset all to game default") {
             choose(page, [None; PLAYERS]);
@@ -745,7 +799,7 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         }
         label(
             ui,
-            "File: plugins\\w2r-unit-color\\data\\color_profiles.ini in your w2r folder.",
+            "File: plugins\\w2r-unit-color\\data\\color_profiles.json in your w2r folder.",
         );
     }
 }
@@ -882,7 +936,7 @@ unsafe fn load(host: *const W2rHost) -> W2rStatus {
     // The stock colours first: they are the pickers' defaults and mean "no change".
     let stock = read_stock(game);
     *STOCK.lock().unwrap_or_else(|e| e.into_inner()) = stock;
-    // Reads (or creates) color_profiles.ini now: the dropdown lists its profiles, and a broken
+    // Reads (or creates) color_profiles.json now: the dropdown lists its profiles, and a broken
     // file shows in the log at start.
     let page = new_page();
     log(W2R_LOG_INFO, &page.status);
