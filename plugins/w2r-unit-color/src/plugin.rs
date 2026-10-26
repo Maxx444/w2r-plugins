@@ -32,7 +32,7 @@ const PROFILES_FILE: &str = "color_profiles.json";
 const OLD_PROFILES_FILE: &str = "color_profiles.ini";
 /// Largest file read (64 full profiles are about 20 KiB).
 const MAX_FILE: usize = 1 << 20;
-/// Edit buffers: `#RRGGBB` plus room for stray spaces; a profile name or author.
+/// Edit buffers: `#RRGGBB` plus room for stray spaces; a profile name.
 const HEX_CAP: usize = 16;
 const NAME_CAP: usize = model::MAX_NAME + 1;
 
@@ -89,7 +89,6 @@ struct Page {
     selected: i32,
     hex: [[u8; HEX_CAP]; PLAYERS],
     name: [u8; NAME_CAP],
-    author: [u8; NAME_CAP],
     status: String,
 }
 
@@ -267,8 +266,8 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         .map(|p| p.name.clone())
         .collect();
 
-    // Saving from the options screen: a checkbox that makes the next Apply save, and the name and
-    // author it saves under (greyed while the box is off). The plugin clears the box after.
+    // Saving from the options screen: a checkbox that makes the next Apply save, and the name it
+    // saves under (greyed while the box is off). The plugin clears the box after.
     let d = def(
         W2R_SETTING_BOOL,
         model::SAVE_KEY,
@@ -286,15 +285,6 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
     );
     d.active_when = s(model::SAVE_KEY);
     submit(&d, model::NAME_KEY);
-    let mut d = def(
-        W2R_SETTING_STRING,
-        model::AUTHOR_KEY,
-        "Author",
-        "Who made the profile; shown next to its name. Optional.",
-        SAVE_SUBCATEGORY,
-    );
-    d.active_when = s(model::SAVE_KEY);
-    submit(&d, model::AUTHOR_KEY);
 
     for (i, rgb) in stock.iter().enumerate() {
         let key = model::key(i);
@@ -612,14 +602,10 @@ fn selected(page: &Page) -> Option<&Profile> {
     page.profiles.get(i)
 }
 
-/// Puts the selected profile's name and author in their boxes, ready to save over it.
+/// Puts the selected profile's name in the name box, ready to save over it.
 fn fill_names(page: &mut Page) {
-    let (name, author) = match selected(page) {
-        Some(p) => (p.name.clone(), p.author.clone()),
-        None => (String::new(), String::new()),
-    };
+    let name = selected(page).map(|p| p.name.clone()).unwrap_or_default();
     fill(&mut page.name, &name);
-    fill(&mut page.author, &author);
 }
 
 /// What the "In use" line says: Game default, the matching profile, or Custom colors.
@@ -629,7 +615,7 @@ fn in_use(page: &Page) -> String {
         return "Game default".into();
     }
     match model::matching(&page.profiles, &cur, &stock()) {
-        Some(p) => model::title(p),
+        Some(p) => p.name.clone(),
         None => "Custom colors".into(),
     }
 }
@@ -643,7 +629,6 @@ fn new_page() -> Page {
         selected: 0,
         hex: [[0; HEX_CAP]; PLAYERS],
         name: [0; NAME_CAP],
-        author: [0; NAME_CAP],
         status,
     };
     refill(&mut page, &colors());
@@ -674,7 +659,7 @@ fn choose(page: &mut Page, c: Colors) {
     sync_choice(&page.profiles);
 }
 
-/// Saves the colours in use as a profile named by the name and author boxes.
+/// Saves the colours in use as a profile named by the name box.
 fn save_current(page: &mut Page) -> String {
     let name = model::clean_name(&text_of(&page.name), "");
     if name.is_empty() {
@@ -692,12 +677,9 @@ fn save_current(page: &mut Page) -> String {
         .unwrap_or_default();
     let p = Profile {
         name: name.clone(),
-        author: model::clean_name(&text_of(&page.author), ""),
         colors: colors(),
         extra,
     };
-    let title = model::title(&p);
-    let (p_name, p_author) = (p.name.clone(), p.author.clone());
     let mut next = page.profiles.clone();
     if let Err(e) = profiles::upsert(&mut next, p) {
         return format!("Not saved: {e}");
@@ -710,8 +692,8 @@ fn save_current(page: &mut Page) -> String {
         page.selected = i as i32 + 1;
     }
     sync_choice(&page.profiles);
-    prefill_names(&p_name, &p_author);
-    format!("Saved {title} to {PROFILES_FILE}")
+    prefill_name(&name);
+    format!("Saved {name} to {PROFILES_FILE}")
 }
 
 unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
@@ -762,13 +744,13 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         if last > 0 && (ui.slider_int)(ui.ctx, s("Profile"), &mut page.selected, 0, last) != 0 {
             fill_names(page);
         }
-        let title = selected(page).map_or_else(|| "Game default".to_string(), model::title);
+        let title = selected(page).map_or_else(|| "Game default".to_string(), |p| p.name.clone());
         label(ui, &format!("Profile: {title}"));
         if button(ui, "Apply profile") {
             let c = selected(page).map_or([None; PLAYERS], |p| p.colors);
             if let Some(p) = selected(page) {
-                let (n, a) = (p.name.clone(), p.author.clone());
-                prefill_names(&n, &a);
+                let n = p.name.clone();
+                prefill_name(&n);
             }
             choose(page, c);
             page.status = format!("Applied {title}");
@@ -777,8 +759,6 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
         if edits {
             let buf = &mut page.name;
             (ui.text_edit)(ui.ctx, s("Profile name"), buf.as_mut_ptr(), NAME_CAP as u32);
-            let buf = &mut page.author;
-            (ui.text_edit)(ui.ctx, s("Author"), buf.as_mut_ptr(), NAME_CAP as u32);
             if button(ui, "Save current colors as this profile") {
                 page.status = save_current(page);
             }
@@ -867,29 +847,26 @@ fn settings_changed() {
             .iter()
             .find(|p| p.name.eq_ignore_ascii_case(name))
     {
-        let (n, a) = (p.name.clone(), p.author.clone());
-        prefill_names(&n, &a);
+        let n = p.name.clone();
+        prefill_name(&n);
     }
     if get_i64(model::SAVE_KEY) == 1 {
         set_i64(model::SAVE_KEY, 0);
         let name = get_str(model::NAME_KEY);
-        let author = get_str(model::AUTHOR_KEY);
         fill(&mut page.name, &name);
-        fill(&mut page.author, &author);
         page.status = save_current(page);
         log(W2R_LOG_INFO, &page.status);
     }
     sync_choice(&page.profiles);
 }
 
-/// Puts a profile's name and author in the options screen's save fields (shown on the next
-/// visit), so editing a profile is: choose it, reopen, change colors, check Save, Apply.
-fn prefill_names(name: &str, author: &str) {
+/// Puts a profile's name in the options screen's Profile Name field (shown on the next visit), so
+/// editing a profile is: choose it, reopen, change colors, check Save, Apply.
+fn prefill_name(name: &str) {
     if !DECLARED.load(Ordering::Relaxed) {
         return;
     }
     set_str(model::NAME_KEY, name);
-    set_str(model::AUTHOR_KEY, author);
 }
 
 fn get_i64(key: &str) -> i64 {

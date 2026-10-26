@@ -58,7 +58,6 @@ pub const REMASTERED: [Rgb; PLAYERS] = [
 #[derive(Debug, Clone, PartialEq)]
 pub struct Profile {
     pub name: String,
-    pub author: String,
     pub colors: Colors,
     /// The `colors` object's other fields (highlight and bar colors from warcraft2.site and W2
     /// Toolkit presets). Not applied, only kept so the file loses nothing when it is saved again.
@@ -73,27 +72,17 @@ pub fn default_profiles() -> Vec<Profile> {
         c[BLACK] = Some(rgb);
         c
     };
-    let p = |name: &str, author: &str, colors| Profile {
+    let p = |name: &str, colors| Profile {
         name: name.into(),
-        author: author.into(),
         colors,
         extra: Vec::new(),
     };
     vec![
-        p("Remastered", "Blizzard Entertainment", all(REMASTERED)),
-        p("Classic", "Blizzard Entertainment", all(CLASSIC)),
-        p("Black to pink", "Luxray997 (wc2r-plus)", black(PINK)),
-        p("Black to cyan", "Luxray997 (wc2r-plus)", black(CYAN)),
+        p("Remastered", all(REMASTERED)),
+        p("Classic", all(CLASSIC)),
+        p("Black to pink", black(PINK)),
+        p("Black to cyan", black(CYAN)),
     ]
-}
-
-/// "Name by Author", or the name alone.
-pub fn title(p: &Profile) -> String {
-    if p.author.is_empty() {
-        p.name.clone()
-    } else {
-        format!("{} by {}", p.name, p.author)
-    }
 }
 
 /// The options screen's profile dropdown: `Custom`, `Game default`, then the profiles as they
@@ -108,13 +97,11 @@ const MAX_CHOICE_LABEL: usize = 64;
 /// Settings key of the dropdown (an index).
 pub const PROFILE_KEY: &str = "profile";
 /// Settings keys of the options screen's save fields: the checkbox that makes Apply save, and the
-/// name and author it saves under.
+/// name it saves under.
 pub const SAVE_KEY: &str = "save_profile";
 pub const NAME_KEY: &str = "profile_name";
-pub const AUTHOR_KEY: &str = "profile_author";
 
-/// The dropdown's labels for `profiles`: the name only (the dropdown is too narrow for
-/// "name by author"; the author shows in the Author field), cut to the host's 64 bytes.
+/// The dropdown's labels for `profiles`: their names, cut to the host's 64 bytes.
 pub fn choice_labels(profiles: &[Profile]) -> Vec<String> {
     let mut out = vec!["Custom".to_string(), "Game default".to_string()];
     for p in profiles.iter().take(MAX_LISTED) {
@@ -225,7 +212,7 @@ pub fn stock_or_default(read: [Rgb; PLAYERS]) -> [Rgb; PLAYERS] {
 
 /// Most profiles kept from one file; the rest are ignored.
 pub const MAX_PROFILES: usize = 64;
-/// Longest profile name or author kept (in characters); longer ones are cut.
+/// Longest profile name kept (in characters); longer ones are cut.
 pub const MAX_NAME: usize = 40;
 
 /// A name safe to show in the game's UI: printable ASCII, trimmed, at most `MAX_NAME`.
@@ -312,20 +299,10 @@ mod tests {
     #[test]
     fn defaults_are_sane() {
         let d = default_profiles();
-        assert!(
-            d.iter()
-                .all(|p| p.name.len() <= MAX_NAME && p.author.len() <= MAX_NAME)
-        );
+        assert!(d.iter().all(|p| p.name.len() <= MAX_NAME));
+        assert_eq!(d[1].name, "Classic");
         assert_eq!(d[2].colors[BLACK], Some(PINK));
         assert_eq!(d[2].colors.iter().filter(|c| c.is_some()).count(), 1);
-        assert_eq!(title(&d[1]), "Classic by Blizzard Entertainment");
-        let anon = Profile {
-            name: "X".into(),
-            author: String::new(),
-            colors: [None; PLAYERS],
-            extra: Vec::new(),
-        };
-        assert_eq!(title(&anon), "X");
     }
 
     #[test]
@@ -373,7 +350,6 @@ mod tests {
         let mut d = default_profiles();
         d.push(Profile {
             name: "x".repeat(40),
-            author: "y".repeat(40),
             colors: [None; PLAYERS],
             extra: Vec::new(),
         });
@@ -385,7 +361,6 @@ mod tests {
         let many: Vec<Profile> = (0..30)
             .map(|i| Profile {
                 name: format!("p{i}"),
-                author: String::new(),
                 colors: [None; PLAYERS],
                 extra: Vec::new(),
             })
