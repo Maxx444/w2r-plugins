@@ -9,6 +9,19 @@ plugin, which this one replaces.
 second one to load fails (the log says `hook_install returned` with a conflict). Black Recolor's
 pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cyan" profile.
 
+## Credits
+
+- **Beau Hastings** (hastinbe):
+  [Black Recolor](https://github.com/hastinbe/w2r-plugins/tree/main/plugins/w2r-black-recolor),
+  which this plugin replaces, and the W2R Mod Loader.
+- **Luxray997**: [wc2r-plus](https://github.com/Luxray997/wc2r-plus) (MIT), whose "Black2Pink"
+  option is where the recolor started.
+- **mauritsschelvis87**: [War_2_Remastered_Mods](https://github.com/mauritsschelvis87-crypto/War_2_Remastered_Mods),
+  the inspiration for Unit Color.
+- **Lambchops**: *Allied Colors* for the Battle.net Edition
+  ([forum.war2.ru](https://forum.war2.ru/index.php?topic=4910.15)), the inspiration for Allied
+  Minimap Colors.
+
 ## Settings
 
 **Options > Unit Color** (needs a W2R Mod Loader with the options screen):
@@ -18,7 +31,7 @@ pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cya
     `color_profiles.json` by name, as they were when the game started. Choose one and press Apply.
     It shows the profile whose colors are in use, or Custom once you change a color by hand.
     **It lists up to 14 profiles** (the host allows 16 entries, and Custom and Game default take
-    two). The four profiles the plugin starts with count toward the 14. Profiles after the 14th
+    two). The six profiles the plugin starts with count toward the 14. Profiles after the 14th
     stay in the file and can be applied from the plugin card; the file holds up to 64.
   - **Save or Delete Profile Name:** the profile the boxes below save or delete. Applying a profile
     fills in its name.
@@ -44,11 +57,12 @@ change the dropdown and a picker in the same visit, the profile wins.
 
 | Row | What it does |
 |---|---|
-| `>> IN USE: ... <<` | The profile whose colors are in use, "Game default", or "Custom colors". |
-| `Player 1 (Red)` .. `Player 8 (Yellow)` | The color in use for that team as `#RRGGBB`, the same value the Options picker shows. Type a new one to apply it at once; clear the box for the game's own color. The Options pickers show a change the next time the screen opens. (Text boxes until the host offers a color swatch for plugin cards.) |
-| `Profile` + `Apply profile` | Game default, then every profile in `color_profiles.json`, including ones added since the game started. |
+| `>> IN USE: ... <<` | Only on a W2R Mod Loader without card dropdowns (otherwise the Color Profile dropdown shows it): the profile whose colors are in use, "Game default", or "Custom colors". |
+| `Player 1 (Red)` .. `Player 8 (Yellow)` | One row per team color: on a W2R Mod Loader with card color rows (`W2rUi.color_edit`, proposed in hastinbe/w2r-mod-loader#3), a swatch and a `#rrggbb` button that opens the same color editor as Options; otherwise a text box with `#RRGGBB` (type a new one to apply it at once; clear the box for the game's own color). Picking the game's own color leaves that team unchanged. The Options pickers show a change the next time the screen opens. |
+| `Color Profile` (dropdown) | On a W2R Mod Loader with card dropdowns (`W2rUi.combo`, proposed in hastinbe/w2r-mod-loader#3): the same list as Options > Unit Color (Custom, Game default, then the first 14 profiles in `color_profiles.json`), read live from the file. A pick applies at once: the colors, the swatches and the Profile name box follow. It shows the profile in use, or Custom. Profiles after the 14th cannot be reached from the card. |
+| `Profile` + `Apply profile` (only without card dropdowns) | Game default, then every profile in `color_profiles.json`, including ones added since the game started. |
 | `Profile name`, `Save current colors as this profile` | Saves the colors in use into `color_profiles.json`, replacing a profile of the same name. Moving the slider fills in that profile's name. |
-| `Delete this profile` | Asks "Delete "name"? This cannot be undone." for the profile chosen with the slider, then `Yes, delete it` removes it from `color_profiles.json` and `No, keep it` does nothing. The colors in use are not changed. |
+| `Delete this profile` | Asks "Delete "name"? This cannot be undone." for the profile shown in the Color Profile dropdown (without card dropdowns: chosen with the slider), then `Yes, delete it` removes it from `color_profiles.json` and `No, keep it` does nothing. The colors in use are not changed. Game default, Classic and Remastered cannot be deleted. |
 | `Reload color_profiles.json` | Reads the file again after you edit it; the card's list updates at once, the Options dropdown at the next start. |
 | `Reset all to game default` | Clears every color. |
 
@@ -58,12 +72,80 @@ set a color.
 The colors are kept as `color1` .. `color8` (`rrggbb`) and the dropdown as `profile` in the
 plugin's settings.
 
+## Allied Minimap Colors
+
+> It writes the game's minimap dot table, which has no host symbol. The plugin finds it at a fixed
+> distance from `TeamColourRgba` for game build 1.0.2.2818 and uses it only after checking the
+> stock bytes next to it (see "How it works"). On any other build it stays off.
+
+Shows **allies in blue and enemies in red on the minimap**, so you can tell sides apart at a
+glance whatever colors the match handed out. Your own units keep their color. The units on the
+main map are not changed. It is **off by default**.
+
+**Credit:** the idea and the method come from **Lambchops**' *Allied Colors* plugin
+(`allied_color.w2p`, [forum.war2.ru](https://forum.war2.ru/index.php?topic=4910.15)) for the
+Warcraft II Battle.net Edition Combat Edition. This is a new
+implementation for Remastered; none of that plugin's code is used (it was written for the old
+executable and cannot load in Remastered).
+
+### Turning it on and off
+
+- **Hotkey: F1** (by default) turns it on or off during a match. It only works while the game
+  window is in front and the chat box is closed, so typing it in chat or in another program does
+  nothing. Hold-to-repeat does not flicker it: one press, one toggle. A press that is ignored says
+  why in the log.
+- **Options > Unit Color > Allied Minimap Colors:** the **Allied Minimap Colors** checkbox, and
+  **Allied Minimap Colors Hotkey**, a dropdown with F1, F8, F2, F3 and F4.
+- **The plugin's card** (title screen > Manage): the same checkbox, and a note with the current
+  hotkey.
+
+The hotkey, the checkbox and the options screen are one setting (`allied_minimap`, with the key in
+`allied_key`): pressing the hotkey in a match also changes the checkbox, and it stays as you left it for
+the next match and the next start.
+
+**F2, F3 and F4 also move the camera.** In Remastered they jump the view to a saved location (your
+start location by default; F4 also switches between the current fight and the start location). A
+plugin cannot take a key away from the game, so with one of them as the hotkey, every press toggles
+the colors *and* moves the camera. They are in the list, marked "(also moves the camera)", for
+those who want them anyway. **F6, F7 and Insert are not offered** because the game uses them. The
+Combat Edition plugin used Insert; F1 is the default here; in testing the game did nothing with it (nor with F8).
+
+### What you see
+
+| Minimap dots of | With it on |
+|---|---|
+| You | Your own color (unchanged; a custom Blue or White as described under What changes) |
+| Allied players | The stock blue dot |
+| Everyone else (enemies) | The stock red dot |
+
+- The red is the first entry of the red team ramp, so a custom **Player 1 (Red)** color also
+  changes the enemy dots. The blue is a shared palette entry and is always the stock blue.
+- "Allied" is your side of the game's diplomacy: a player you have set to allied. Change
+  alliances in the match and the minimap follows on the next frame.
+- Observers and replays: not tested. If the game gives no local player among the eight, it does
+  nothing; if it does, everyone not allied to that slot shows red. Turn it off there.
+
+### How it works
+
+Remastered still has the Battle.net Edition's eight-byte table of minimap dot colors, one per
+player, which the game fills from the players' colors when a match starts. With the feature on,
+every frame (the same tick as the color recolor) the plugin writes ally blue or enemy red into it
+from the alliance table (`DiplomacyStance`, row `LocalPlayer`), leaving your own entry alone.
+Turning it off, or unloading the plugin, writes each player's stock dot back.
+
+The table is not a host symbol. For game build 1.0.2.2818 it sits `0x8dc` bytes before
+`TeamColourRgba` (live table 0x008c8d64, stock copy 0x008c8d84, found in the game's minimap
+drawing code). At load the plugin checks that the stock copy holds exactly the stock dots
+(`d0 01 d8 dc e0 e4 ff 02`); if not, for example after a game update, the feature turns itself off,
+writes nothing, logs `Allied Minimap Colors off: ...`, and the card says it is not available. The
+rest of Unit Color still works.
+
 ## `color_profiles.json`
 
 In `plugins\w2r-unit-color\data\` inside your w2r folder
 (`%USERPROFILE%\Saved Games\Warcraft2Remastered\w2r\`). That is the only folder the plugin API lets a
-plugin read or write; it never sees a path. Created the first time the plugin loads, with four profiles
-(Remastered, Classic, Black to pink, Black to cyan).
+plugin read or write; it never sees a path. Created the first time the plugin loads, with six profiles
+(Classic, Remastered, Black to pink, Black to cyan, Maxx444's + Pink, Maxx444's + Cyan).
 
 Each profile is a warcraft2.site / W2 Toolkit preset with a name:
 
@@ -88,6 +170,7 @@ Each profile is a warcraft2.site / W2 Toolkit preset with a name:
 
 - `player` is the team color's number (1 Red, 2 Blue, 3 Teal, 4 Violet, 5 Orange, 6 Black,
   7 White, 8 Yellow) and `color` is `#RRGGBB`. A player left out keeps the game's own color.
+- **Game default**, **Classic** and **Remastered** are protected: saving under one of those names (any case) is refused, so save changes under a different name, and neither the card nor the options screen deletes them. Edit the file by hand to change them.
 - The name is printable ASCII, at most 40 characters. An `author` in a pasted site preset is ignored.
 - Other fields in `colors` (selection, ally, critter, gold mine and oil highlights, HP and mana
   bars) are not applied, but are kept when the plugin saves the file again.
@@ -111,18 +194,43 @@ color at the start of a match.
 - **Render palette ramps** for Red to White (entries `0xd0` to `0xeb`, four per team, shaded by the
   stock ramp's brightness steps): classic-graphics sprites, and the minimap dots of the colors whose
   dot uses the ramp's first entry (Red, Teal, Violet, Orange, Black).
-- **Not changed:** Yellow has no ramp of its own (`0xec`.. holds the gold mine highlight), and the
-  minimap dots of Blue, White and Yellow use shared palette entries (1, 255 and 2) that other
-  things use too, so those stay stock. The War_2_Remastered_Mods color tool has the same limits.
-- **Score screen:** the colored cells after a match come from the game's skin file
-  (`fe_endgame_stats_bar_0` .. `_7` in `Data\skins\skins.json`), not from the color table, and a
-  plugin can neither edit game files nor reach those skins in memory. They stay stock until the
-  W2R Mod Loader offers a way (requested from the maintainer).
+- **Minimap dots of Blue and White:** the game draws them with shared palette
+  entries (1 and 255) that other things use too, so those entries stay stock. Instead, when Blue or
+  White has a custom color, those players' entries in the minimap dot table (the one Allied
+  Minimap Colors uses) point at the first entry of their own ramp (`0xd4` and `0xe8`), which
+  carries the custom color. Back to the game's own color, the stock entry comes back.
+- **Not changed:** Yellow has no ramp of its own (`0xec`.. holds the gold mine highlight) and its
+  minimap dot uses the shared entry 2, so Yellow stays stock everywhere except the HD table. The
+  War_2_Remastered_Mods color tool has the same limit.
+- **Score screen:** the colored bars after a match come from the game's skin file
+  (`fe_endgame_stats_bar_0` .. `_7` in `Data\skins\skins.json`), not from the color table. A W2R Mod
+  Loader with score screen bars (proposed in hastinbe/w2r-mod-loader#3, item 4) recolors them
+  from the color table, so they follow the colors in use: the bright half is the team's color, the
+  dark half is half of it, as in the stock skins. On a loader without it they stay stock.
 - **Restores:** choosing Game default, or unloading the plugin, writes the stock values back. The
   settings are kept.
 
 ## Capabilities
 
-- `game.read`: symbol lookup for `TeamColourRgba`, `RenderPalette` and `HudMenuButtons`.
+- `game.read`: symbol lookup for `TeamColourRgba`, `RenderPalette` and `HudMenuButtons`; for
+  Allied Minimap Colors also `LocalPlayer`, `DiplomacyStance`, `TeamColourReorder` and `ChatTargetMode`.
 - `hooks.raw`: one detour on `HudMenuButtons` (drawn every frame in a match; original called first)
-  as the per-frame tick, and direct writes to the two color tables. `affects_simulation` is false.
+  as the per-frame tick, and direct writes to the two color tables and, with Allied Minimap Colors
+  on or a custom Blue or White, the minimap color table (found by offset, see above).
+  `affects_simulation` is false: only what your screen draws changes.
+
+## Testing
+
+Tested in game on build 1.0.2.2818, in multiplayer matches against
+**computer players only**. Not tested:
+
+- a **player vs player** multiplayer match (another person on another computer);
+- Allied Minimap Colors as an observer or in a replay;
+- the card widgets, the profile dropdown on the card and the score screen bars on hastinbe's
+  W2R Mod Loader, since they need the host changes proposed in hastinbe/w2r-mod-loader#3 (tested
+  on a build with those changes);
+- the card's fallback on a loader without those changes (text boxes, slider and `Apply profile`)
+  since the card widgets were added in 0.2.0.
+
+Each player sees only their own colors (nothing is sent to other players and the simulation is not
+touched), so a player vs player match should behave the same, but that has not been checked.

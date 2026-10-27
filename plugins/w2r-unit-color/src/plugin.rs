@@ -10,14 +10,21 @@
 //! the profiles in `color_profiles.json`, which lives in the plugin's own data folder, the only
 //! folder a plugin can write (docs/abi.md, `data_open`). On an older host the card also has one
 //! text box per colour.
+//!
+//! Allied Minimap Colors (after Lambchops' Allied Colors for the Battle.net
+//! Edition): the same tick rewrites the game's eight-byte per-player minimap colour table, allies
+//! blue and enemies red, and polls the toggle key. The table has no host symbol, so it is found at
+//! a fixed distance from `TeamColourRgba` for build 1.0.2.2818 and used only after its stock copy
+//! is seen holding the expected bytes (see `setup_minimap`).
 
 use core::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use w2r_abi::*;
 
+use crate::allied;
 use crate::model::{self, Colors, PLAYERS, Profile, RAMP, Rgb};
 use crate::profiles;
 
@@ -40,11 +47,92 @@ const CATEGORY: &str = "Unit Color";
 /// every group of rows, so it cannot be left out). At most 32 bytes.
 const PROFILE_SUBCATEGORY: &str = "Profiles";
 // The host refuses a category or subcategory over 32 bytes, and with it the whole declaration.
-const _: () =
-    assert!(CATEGORY.len() <= 32 && PROFILE_SUBCATEGORY.len() <= 32 && SUBCATEGORY.len() <= 32);
+const _: () = assert!(
+    CATEGORY.len() <= 32
+        && PROFILE_SUBCATEGORY.len() <= 32
+        && SUBCATEGORY.len() <= 32
+        && ALLIED_SUBCATEGORY.len() <= 32
+);
 const SUBCATEGORY: &str = "Player Colors";
+const ALLIED_SUBCATEGORY: &str = "Allied Minimap Colors";
+
+/// Build 1.0.2.2818: `TeamColourRgba` (0x008c9640) minus the live minimap colour table
+/// (0x008c8d64, read by the minimap dot drawing at 0x004c2d6b and 0x004f8531). The stock copy by
+/// colour index follows 0x20 bytes later (0x008c8d84; the match start copies it into the live one
+/// at 0x004f09c3). Found in the game's code, not a host symbol.
+const MINIMAP_BEFORE_TABLE: usize = 0x8dc;
+const MINIMAP_STOCK_AFTER_LIVE: usize = 0x20;
 
 type MenuButtonsFn = unsafe extern "C" fn(i32);
+
+/// `W2rUi.color_edit`: a caption, a swatch and a button that opens the host's color editor over
+/// a 7-byte `rrggbb` + NUL buffer; 1 when OK picked a different color. Appended to `W2rUi` by a
+/// W2R Mod Loader with card widgets (proposed in hastinbe/w2r-mod-loader#3); the w2r-abi this
+/// workspace pins predates it, so the fields are declared here and used only when
+/// `struct_size` says the host has them.
+type ColorEditFn = unsafe extern "C" fn(*mut c_void, W2rStr, *mut u8) -> i32;
+/// `W2rUi.combo`, appended after `color_edit` by the same loader: a caption and a dropdown of
+/// `count` choices (2 to 16, at most 64 bytes each) showing `*selected`; 1 when the player picked
+/// a different entry.
+type ComboFn = unsafe extern "C" fn(*mut c_void, W2rStr, *const W2rStr, u32, *mut i32) -> i32;
+
+/// `W2rUi` with the card widget fields appended.
+#[repr(C)]
+struct UiExt {
+    base: W2rUi,
+    color_edit: ColorEditFn,
+    combo: ComboFn,
+}
+
+/// Whether the host's widget table reaches the end of the field at `offset`.
+fn ui_has(ui: &W2rUi, offset: usize) -> bool {
+    ui.struct_size as usize >= offset + core::mem::size_of::<usize>()
+}
+
+/// The host's `color_edit`, when its widget table is long enough to have one.
+fn color_edit_of(ui: &W2rUi) -> Option<ColorEditFn> {
+    if !ui_has(ui, core::mem::offset_of!(UiExt, color_edit)) {
+        return None;
+    }
+    // SAFETY: the host says its table is at least this long, and the field is appended after the
+    // ones `W2rUi` declares.
+    Some(unsafe { (*(ui as *const W2rUi).cast::<UiExt>()).color_edit })
+}
+
+/// The host's `combo`, when its widget table is long enough to have one.
+fn combo_of(ui: &W2rUi) -> Option<ComboFn> {
+    if !ui_has(ui, core::mem::offset_of!(UiExt, combo)) {
+        return None;
+    }
+    // SAFETY: as in `color_edit_of`.
+    Some(unsafe { (*(ui as *const W2rUi).cast::<UiExt>()).combo })
+}
+
+/// What Allied Minimap Colors reads and writes.
+struct Minimap {
+    live: *mut u8,
+    local: *const u8,
+    stance: *const u8,
+    reorder: *const u8,
+    /// Non-zero while the chat box is open (what w2r-chat reads as "composing").
+    chat_mode: *const u8,
+}
+
+// SAFETY: addresses of the game's globals, fixed for the session; used from the main thread.
+unsafe impl Send for Minimap {}
+unsafe impl Sync for Minimap {}
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn GetAsyncKeyState(vkey: i32) -> i16;
+    fn GetForegroundWindow() -> *mut c_void;
+    fn GetWindowThreadProcessId(window: *mut c_void, pid: *mut u32) -> u32;
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetCurrentProcessId() -> u32;
+}
 
 struct Game {
     table: *mut f32,
@@ -104,6 +192,15 @@ static LISTED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static LAST_CHOICE: Mutex<i64> = Mutex::new(model::CHOICE_GAME_DEFAULT);
 static SLOTS: Mutex<[Slot; PLAYERS]> = Mutex::new([EMPTY_SLOT; PLAYERS]);
 static PAGE: Mutex<Option<Page>> = Mutex::new(None);
+/// Set when the minimap table was found and checked; Allied Minimap Colors is off without it.
+static MINIMAP: OnceLock<Minimap> = OnceLock::new();
+/// Allied Minimap Colors on (the `allied_minimap` setting).
+static ALLIED: AtomicBool = AtomicBool::new(false);
+/// The toggle key's virtual-key code.
+static HOTKEY: AtomicI32 = AtomicI32::new(0x70);
+/// True while the live minimap table holds what the plugin wrote.
+static MINIMAP_OWNED: AtomicBool = AtomicBool::new(false);
+static KEY: Mutex<allied::Toggle> = Mutex::new(allied::Toggle::new());
 
 fn host() -> Option<&'static W2rHost> {
     unsafe { HOST.load(Ordering::Acquire).as_ref() }
@@ -309,6 +406,30 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         let mut d = def(W2R_SETTING_COLOR, &key, &label, &description, SUBCATEGORY);
         d.default_str = s(&default);
         submit(&d, &key);
+    }
+
+    // Allied Minimap Colors, only when the minimap table was found.
+    if MINIMAP.get().is_some() {
+        let d = def(
+            W2R_SETTING_BOOL,
+            allied::ENABLED_KEY,
+            "Allied Minimap Colors",
+            "On the minimap, allies are blue and enemies red; your own units keep their color. The hotkey below turns it on and off in a match. Inspired by Lambchops' Allied Colors for the Battle.net Edition.",
+            ALLIED_SUBCATEGORY,
+        );
+        submit(&d, allied::ENABLED_KEY);
+        let keys: Vec<W2rStr> = allied::HOTKEYS.iter().map(|(l, _)| s(l)).collect();
+        let mut d = def(
+            W2R_SETTING_CHOICE,
+            allied::HOTKEY_KEY,
+            "Allied Minimap Colors Hotkey",
+            "Press it in a match to turn Allied Minimap Colors on or off (not while chatting). Default F1. F2, F3 and F4 also jump the camera to a saved location, as the game uses them too.",
+            ALLIED_SUBCATEGORY,
+        );
+        d.default_int = allied::DEFAULT_HOTKEY;
+        d.choices = keys.as_ptr();
+        d.choice_count = keys.len() as u32;
+        submit(&d, allied::HOTKEY_KEY);
     }
     all
 }
@@ -566,6 +687,147 @@ unsafe fn apply(game: &Game, wanted: &Colors) {
     }
 }
 
+// ---- Allied Minimap Colors -------------------------------------------------------------------
+
+unsafe fn read8(at: *const u8) -> [u8; allied::SLOTS] {
+    // SAFETY (caller): eight readable bytes; [u8; 8] needs no alignment.
+    unsafe { core::ptr::read_volatile(at.cast::<[u8; allied::SLOTS]>()) }
+}
+
+/// Finds the minimap colour table next to `TeamColourRgba` and checks it before anything uses it:
+/// its stock copy must hold exactly the stock dots. On any other layout (another game build) the
+/// feature stays off and nothing is written.
+fn setup_minimap(table: usize) -> Result<(), String> {
+    let live = table
+        .checked_sub(MINIMAP_BEFORE_TABLE)
+        .ok_or("TeamColourRgba address too low")?;
+    // SAFETY: on build 1.0.2.2818 (the only build plugin.json accepts) this is the stock minimap
+    // table in the game's data section, a few kilobytes before TeamColourRgba; it is only read.
+    let found = unsafe { read8((live + MINIMAP_STOCK_AFTER_LIVE) as *const u8) };
+    if found != allied::STOCK {
+        return Err(format!(
+            "minimap color table not where build 1.0.2.2818 has it (found {found:02x?})"
+        ));
+    }
+    let need = |name: &str| lookup(name).ok_or_else(|| format!("symbol {name} not available"));
+    let m = Minimap {
+        live: live as *mut u8,
+        local: need("LocalPlayer")? as *const u8,
+        stance: need("DiplomacyStance")? as *const u8,
+        reorder: need("TeamColourReorder")? as *const u8,
+        chat_mode: need("ChatTargetMode")? as *const u8,
+    };
+    let _ = MINIMAP.set(m);
+    Ok(())
+}
+
+/// Reads the Allied Minimap Colors settings (at load and after the options screen's Apply).
+fn load_allied() {
+    ALLIED.store(get_i64(allied::ENABLED_KEY) == 1, Ordering::Relaxed);
+    HOTKEY.store(
+        allied::hotkey(get_i64(allied::HOTKEY_KEY)).1,
+        Ordering::Relaxed,
+    );
+}
+
+/// Turns Allied Minimap Colors on or off and stores it, so the options screen shows it too.
+fn set_allied(on: bool) {
+    ALLIED.store(on, Ordering::Relaxed);
+    set_i64(allied::ENABLED_KEY, i64::from(on));
+    log(
+        W2R_LOG_INFO,
+        if on {
+            "Allied Minimap Colors on"
+        } else {
+            "Allied Minimap Colors off"
+        },
+    );
+}
+
+/// Whether the game window is the one in front (typing in another program does nothing).
+fn game_has_focus() -> bool {
+    // SAFETY: plain queries about the foreground window.
+    unsafe {
+        let window = GetForegroundWindow();
+        if window.is_null() {
+            return false;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(window, &mut pid);
+        pid == GetCurrentProcessId()
+    }
+}
+
+/// Makes the live minimap table match the colours and `on`: each player's dot by their colour
+/// (a recoloured Blue or White points at its palette ramp, which the recolour rewrites), then
+/// allies blue and enemies red when Allied Minimap Colors is on. When that is just the game's own
+/// table it is written back only if the plugin had changed it, so the game's table is never
+/// touched otherwise.
+unsafe fn apply_minimap(m: &Minimap, on: bool, wanted: &Colors) {
+    unsafe {
+        let current = read8(m.live);
+        let reorder = read8(m.reorder);
+        let recolored = wanted.map(|c| c.is_some());
+        let ramps: [Option<u8>; allied::SLOTS] =
+            core::array::from_fn(|c| model::ramp_base(c).and_then(|b| u8::try_from(b).ok()));
+        let base = allied::base_table(&reorder, &current, &recolored, &ramps);
+        let want = if on {
+            let local = *m.local;
+            if usize::from(local) < allied::SLOTS {
+                let row = read8(m.stance.add(usize::from(local) * allied::STANCE_STRIDE));
+                allied::allied_table(local, &row, &base).unwrap_or(base)
+            } else {
+                base
+            }
+        } else {
+            base
+        };
+        let stock = allied::stock_table(&reorder, &current);
+        let next = if want != stock {
+            MINIMAP_OWNED.store(true, Ordering::Relaxed);
+            want
+        } else if MINIMAP_OWNED.swap(false, Ordering::Relaxed) {
+            stock
+        } else {
+            return;
+        };
+        for (p, dot) in next.iter().enumerate() {
+            if current[p] != *dot {
+                *m.live.add(p) = *dot;
+            }
+        }
+    }
+}
+
+/// Once per frame in a match: the toggle key, then the minimap table.
+fn allied_tick() {
+    let Some(m) = MINIMAP.get() else { return };
+    let vk = HOTKEY.load(Ordering::Relaxed);
+    if vk != 0 {
+        // SAFETY: a plain key-state query; ChatTargetMode is a byte in the game's data section.
+        let down = (unsafe { GetAsyncKeyState(vk) } as u16) & 0x8000 != 0;
+        let focus = game_has_focus();
+        let chatting = unsafe { *m.chat_mode } != 0;
+        let press = KEY
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .press(down, focus && !chatting);
+        match press {
+            allied::Press::Toggle => set_allied(!ALLIED.load(Ordering::Relaxed)),
+            allied::Press::Ignored => log(
+                W2R_LOG_INFO,
+                if chatting {
+                    "Allied Minimap Colors hotkey ignored: the chat box is open"
+                } else {
+                    "Allied Minimap Colors hotkey ignored: the game window is not in front"
+                },
+            ),
+            allied::Press::None => {}
+        }
+    }
+    unsafe { apply_minimap(m, ALLIED.load(Ordering::Relaxed), &colors()) };
+}
+
 unsafe extern "C" fn menu_buttons_detour(view: i32) {
     let original = ORIGINAL.load(Ordering::Acquire);
     if original != 0 {
@@ -576,6 +838,7 @@ unsafe extern "C" fn menu_buttons_detour(view: i32) {
         if let Some(game) = GAME.get() {
             unsafe { apply(game, &colors()) };
         }
+        allied_tick();
     }));
 }
 
@@ -671,6 +934,9 @@ fn delete_named(page: &mut Page, name: &str) -> String {
     if name.is_empty() {
         return "Nothing deleted: no profile name".into();
     }
+    if model::is_protected(name) {
+        return format!("Not deleted: {name} is built in");
+    }
     if !page.file_ok {
         return format!("Not deleted: {PROFILES_FILE} could not be read; fix it, then Reload");
     }
@@ -701,6 +967,9 @@ fn save_current(page: &mut Page) -> String {
     let name = model::clean_name(&text_of(&page.name), "");
     if name.is_empty() {
         return "Type a profile name first".into();
+    }
+    if model::is_protected(&name) {
+        return format!("Not saved: {name} is built in; save under a different name");
     }
     if !page.file_ok {
         return format!("Not saved: {PROFILES_FILE} could not be read; fix it, then Reload");
@@ -736,8 +1005,12 @@ fn save_current(page: &mut Page) -> String {
 unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
     let edits = ui.struct_size >= W2R_UI_TEXT_EDIT_SIZE;
     unsafe {
-        // The host draws plain text only, so the line is set apart by its shape.
-        label(ui, &format!(">>  IN USE:  {}  <<", in_use(page)));
+        let dropdown = combo_of(ui);
+        // The Color Profile dropdown shows the profile in use; without it, a line does.
+        if dropdown.is_none() {
+            // The host draws plain text only, so the line is set apart by its shape.
+            label(ui, &format!(">>  IN USE:  {}  <<", in_use(page)));
+        }
 
         if DECLARED.load(Ordering::Relaxed) {
             label(
@@ -745,9 +1018,31 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
                 "Also in Options > Unit Color: color pickers and the Color Profile list.",
             );
         }
-        // Text boxes until the host offers a color swatch for plugin cards. The options screen's
-        // pickers show a change made here the next time it opens.
-        if edits {
+        // Color swatches when the host offers them, else text boxes. The options screen's pickers
+        // show a change made here the next time it opens.
+        if let Some(color_edit) = color_edit_of(ui) {
+            label(
+                ui,
+                "Click a color to change it. Picking the game's own color leaves it unchanged.",
+            );
+            let in_use = colors();
+            let stock = stock();
+            for i in 0..PLAYERS {
+                let caption = format!("Player {} ({})", i + 1, model::NAMES[i]);
+                let mut hex = [0u8; 7];
+                let shown = model::to_setting(in_use[i].unwrap_or(stock[i]));
+                hex[..6].copy_from_slice(&shown.as_bytes()[..6]);
+                if color_edit(ui.ctx, s(&caption), hex.as_mut_ptr()) != 0 {
+                    let picked = String::from_utf8_lossy(&hex[..6]).into_owned();
+                    let mut next = colors();
+                    next[i] = model::wanted(&picked, stock[i]);
+                    set_colors(next);
+                    refill(page, &next);
+                    sync_choice(&page.profiles);
+                    page.status = format!("{}: #{}", model::NAMES[i], picked.to_ascii_uppercase());
+                }
+            }
+        } else if edits {
             label(ui, "Type #RRGGBB, or clear a box for the game's own color.");
             for i in 0..PLAYERS {
                 let caption = format!("Player {} ({})", i + 1, model::NAMES[i]);
@@ -774,24 +1069,34 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             );
         }
 
-        // Profiles: 0 is the game's own colours, then color_profiles.json in file order. Reload
-        // re-reads the file, so edits show here at once.
-        let last = page.profiles.len() as i32;
-        page.selected = page.selected.clamp(0, last);
-        if last > 0 && (ui.slider_int)(ui.ctx, s("Profile"), &mut page.selected, 0, last) != 0 {
-            fill_names(page);
-            page.confirm_delete = None;
-        }
-        let title = selected(page).map_or_else(|| "Game default".to_string(), |p| p.name.clone());
-        label(ui, &format!("Profile: {title}"));
-        if button(ui, "Apply profile") {
-            let c = selected(page).map_or([None; PLAYERS], |p| p.colors);
-            if let Some(p) = selected(page) {
-                let n = p.name.clone();
-                prefill_name(&n);
+        // The Color Profile dropdown, as in Options > Unit Color (Custom, Game default, then the
+        // first profiles in color_profiles.json), but live: it lists the file as it is now, shows
+        // the profile in use, and a pick applies at once.
+        if let Some(combo) = dropdown {
+            if let Some(note) = profile_dropdown(ui, combo, page) {
+                page.status = note;
             }
-            choose(page, c);
-            page.status = format!("Applied {title}");
+        } else {
+            // A loader without card dropdowns: the slider and Apply profile. 0 is the game's own
+            // colours, then color_profiles.json in file order.
+            let last = page.profiles.len() as i32;
+            page.selected = page.selected.clamp(0, last);
+            if last > 0 && (ui.slider_int)(ui.ctx, s("Profile"), &mut page.selected, 0, last) != 0 {
+                fill_names(page);
+                page.confirm_delete = None;
+            }
+            let title =
+                selected(page).map_or_else(|| "Game default".to_string(), |p| p.name.clone());
+            label(ui, &format!("Profile: {title}"));
+            if button(ui, "Apply profile") {
+                let c = selected(page).map_or([None; PLAYERS], |p| p.colors);
+                if let Some(p) = selected(page) {
+                    let n = p.name.clone();
+                    prefill_name(&n);
+                }
+                choose(page, c);
+                page.status = format!("Applied {title}");
+            }
         }
 
         if edits {
@@ -802,12 +1107,24 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             }
         }
 
-        // Delete the profile chosen with the slider, after an "are you sure".
+        // Delete the profile shown in the dropdown (the one in use), or chosen with the slider,
+        // after an "are you sure". The built-in profiles cannot be deleted.
         match page.confirm_delete.clone() {
             None => {
                 if button(ui, "Delete this profile") {
-                    match selected(page) {
-                        Some(p) => page.confirm_delete = Some(p.name.clone()),
+                    let target = if dropdown.is_some() {
+                        model::matching(&page.profiles, &colors(), &stock()).map(|p| p.name.clone())
+                    } else {
+                        selected(page).map(|p| p.name.clone())
+                    };
+                    match target {
+                        Some(name) if model::is_protected(&name) => {
+                            page.status = format!("{name} is built in and cannot be deleted")
+                        }
+                        Some(name) => page.confirm_delete = Some(name),
+                        None if dropdown.is_some() => {
+                            page.status = "Choose a profile in the Color Profile list first".into()
+                        }
                         None => page.status = "Choose a profile with the slider first".into(),
                     }
                 }
@@ -836,6 +1153,36 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             choose(page, [None; PLAYERS]);
             page.status = "All colors back to the game's own".into();
         }
+
+        // Allied Minimap Colors.
+        if MINIMAP.get().is_some() {
+            let mut on = i32::from(ALLIED.load(Ordering::Relaxed));
+            if (ui.checkbox)(
+                ui.ctx,
+                s("Allied Minimap Colors (allies blue, enemies red)"),
+                &mut on,
+            ) != 0
+            {
+                set_allied(on != 0);
+            }
+            let (key, _) = allied::hotkey(get_i64(allied::HOTKEY_KEY));
+            label(
+                ui,
+                &format!("Hotkey: {key} turns it on or off in a match (not while chatting)."),
+            );
+            if DECLARED.load(Ordering::Relaxed) {
+                label(
+                    ui,
+                    "Change the hotkey in Options > Unit Color > Allied Minimap Colors.",
+                );
+            }
+        } else {
+            label(
+                ui,
+                "Allied Minimap Colors: not available on this game build (see the log).",
+            );
+        }
+
         if !page.status.is_empty() {
             label(ui, &page.status);
         }
@@ -843,6 +1190,67 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             ui,
             "File: plugins\\w2r-unit-color\\data\\color_profiles.json in your w2r folder.",
         );
+        label(
+            ui,
+            "Credits: Beau Hastings (Black Recolor), Luxray997 (wc2r-plus).",
+        );
+        label(
+            ui,
+            "Inspired by mauritsschelvis87 (War_2_Remastered_Mods) and Lambchops (Allied Colors).",
+        );
+    }
+}
+
+/// Draws the card's Color Profile dropdown and applies a pick: Game default, or a profile's colors
+/// (the swatches, the boxes and the name fields follow at once). Returns an empty status line when
+/// something was applied (the dropdown itself shows it), to clear an older message.
+unsafe fn profile_dropdown(ui: &W2rUi, combo: ComboFn, page: &mut Page) -> Option<String> {
+    let listed: Vec<String> = page
+        .profiles
+        .iter()
+        .take(model::MAX_LISTED)
+        .map(|p| p.name.clone())
+        .collect();
+    let labels = model::choice_labels(&page.profiles);
+    let strs: Vec<W2rStr> = labels.iter().map(|l| s(l)).collect();
+    let cur = colors();
+    let matched = model::matching(&page.profiles, &cur, &stock()).map(|p| p.name.clone());
+    let mut sel = model::choice_for(&listed, cur == [None; PLAYERS], matched.as_deref()) as i32;
+    let picked = unsafe {
+        combo(
+            ui.ctx,
+            s("Color Profile"),
+            strs.as_ptr(),
+            strs.len() as u32,
+            &mut sel,
+        )
+    };
+    if picked == 0 {
+        return None;
+    }
+    page.confirm_delete = None;
+    match model::choice_target(&listed, i64::from(sel)) {
+        Some(None) => {
+            choose(page, [None; PLAYERS]);
+            page.selected = 0;
+            fill_names(page);
+            // The dropdown shows what was applied; clear any older message instead.
+            Some(String::new())
+        }
+        Some(Some(name)) => {
+            let i = page
+                .profiles
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(name))?;
+            let p = page.profiles[i].clone();
+            page.selected = i as i32 + 1;
+            fill_names(page);
+            prefill_name(&p.name);
+            choose(page, p.colors);
+            Some(String::new())
+        }
+        // Custom: there is nothing to apply.
+        None => None,
     }
 }
 
@@ -873,6 +1281,7 @@ unsafe extern "C" fn on_event(event: *const W2rEvent) {
 /// made in the same visit (the screen cannot show a profile's colours until it is opened again);
 /// otherwise the colours are taken as edited and the dropdown is set to what they match.
 fn settings_changed() {
+    load_allied();
     let mut guard = PAGE.lock().unwrap_or_else(|e| e.into_inner());
     let page = guard.get_or_insert_with(new_page);
     let picked = stored_choice();
@@ -1002,6 +1411,11 @@ unsafe fn load(host: *const W2rHost) -> W2rStatus {
     // The stock colours first: they are the pickers' defaults and mean "no change".
     let stock = read_stock(game);
     *STOCK.lock().unwrap_or_else(|e| e.into_inner()) = stock;
+    // Allied Minimap Colors needs the minimap table; without it the rest still works.
+    match setup_minimap(table) {
+        Ok(()) => log(W2R_LOG_INFO, "Allied Minimap Colors ready"),
+        Err(e) => log(W2R_LOG_WARN, &format!("Allied Minimap Colors off: {e}")),
+    }
     // Reads (or creates) color_profiles.json now: the dropdown lists its profiles, and a broken
     // file shows in the log at start.
     let page = new_page();
@@ -1009,6 +1423,7 @@ unsafe fn load(host: *const W2rHost) -> W2rStatus {
     // Declarations are only accepted while on_load runs.
     DECLARED.store(declare(&stock, &page.profiles), Ordering::Relaxed);
     *LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner()) = stored_choice();
+    load_allied();
     let wanted = load_colors();
     // Rewrite anything stored in another form (`#RRGGBB` from 0.1.0) the way the picker stores it.
     set_colors(wanted);
@@ -1058,6 +1473,9 @@ unsafe extern "C" fn on_unload() {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if let Some(game) = GAME.get() {
             unsafe { apply(game, &[None; PLAYERS]) };
+        }
+        if let Some(m) = MINIMAP.get() {
+            unsafe { apply_minimap(m, false, &[None; PLAYERS]) };
         }
     }));
 }
