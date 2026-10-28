@@ -4,6 +4,7 @@
 pub mod allied;
 pub mod json;
 pub mod model;
+pub mod palcheck;
 pub mod profiles;
 
 #[cfg(target_arch = "x86")]

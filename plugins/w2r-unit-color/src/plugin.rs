@@ -26,6 +26,7 @@ use w2r_abi::*;
 
 use crate::allied;
 use crate::model::{self, Colors, PLAYERS, Profile, RAMP, Rgb};
+use crate::palcheck;
 use crate::profiles;
 
 /// Bytes per render palette entry (RGBA).
@@ -201,6 +202,8 @@ static HOTKEY: AtomicI32 = AtomicI32::new(0x70);
 /// True while the live minimap table holds what the plugin wrote.
 static MINIMAP_OWNED: AtomicBool = AtomicBool::new(false);
 static KEY: Mutex<allied::Toggle> = Mutex::new(allied::Toggle::new());
+/// The palette check's last report: palette address, which terrain palette, colours wanted.
+static CHECKED: Mutex<Option<(usize, Option<&'static str>, Colors)>> = Mutex::new(None);
 
 fn host() -> Option<&'static W2rHost> {
     unsafe { HOST.load(Ordering::Acquire).as_ref() }
@@ -696,6 +699,126 @@ unsafe fn apply(game: &Game, wanted: &Colors) {
     }
 }
 
+// ---- the palette check (personal build, diagnostic) ------------------------------------------
+
+/// Yellow's ramp start in the render palette (the game's ramp table `d0 d4 d8 dc e0 e4 e8 0c`);
+/// read for the log only, the plugin does not write it.
+const YELLOW_RAMP: usize = 0x0c;
+
+fn profile_in_use(cur: &Colors) -> String {
+    if *cur == [None; PLAYERS] {
+        return "Game default".into();
+    }
+    let loaded = load_profiles();
+    match model::matching(&loaded.profiles, cur, &stock()) {
+        Some(p) => format!("\"{}\"", p.name),
+        None => "Custom colors (no profile matches)".into(),
+    }
+}
+
+fn ramp_text(ramp: &[Rgb; RAMP]) -> String {
+    ramp.iter()
+        .map(|&c| palcheck::hex(c))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Once per frame after `apply`: when the palette, the terrain palette in it or the colours
+/// change, logs what the game has (read only). Lines start with "palette check:".
+unsafe fn palette_check(game: &Game) {
+    let palette = unsafe { *game.palette };
+    if palette.is_null() {
+        return;
+    }
+    let entry = |i: usize| -> Rgb {
+        let at = unsafe { palette.add(i * PALETTE_STRIDE) };
+        unsafe { [*at, *at.add(1), *at.add(2)] }
+    };
+    let known = palcheck::identify(entry);
+    let label = known.map(|k| k.label);
+    let wanted = colors();
+    let key = (palette as usize, label, wanted);
+    {
+        let mut last = CHECKED.lock().unwrap_or_else(|e| e.into_inner());
+        if last.as_ref() == Some(&key) {
+            return;
+        }
+        *last = Some(key);
+    }
+    // The ramps the plugin may write (red to white) are left out of the conversion check.
+    let owned = model::ramp_base(0).unwrap_or(0)
+        ..model::ramp_base(PLAYERS - 2).map_or(0, |last| last + RAMP);
+    let scale = palcheck::scale((0..256).filter(|i| !owned.contains(i)).flat_map(entry));
+    let tileset = lookup("TilesetCurrent")
+        .map(|a| {
+            format!("0x{:08x}", unsafe {
+                core::ptr::read_unaligned(a as *const u32)
+            })
+        })
+        .unwrap_or_else(|| "not available".into());
+    log(
+        W2R_LOG_INFO,
+        &format!(
+            "palette check: profile {}; terrain {}; TilesetCurrent raw {} (unverified meaning); palette at 0x{:08x}",
+            profile_in_use(&wanted),
+            label.unwrap_or("not one of the four BNE palettes"),
+            tileset,
+            palette as usize
+        ),
+    );
+    log(
+        W2R_LOG_INFO,
+        &format!(
+            "palette check: conversion {} ({} values outside the team ramps, {} not a multiple of 4, highest {})",
+            scale.conversion.text(),
+            scale.values,
+            scale.not_multiple_of_4,
+            scale.max
+        ),
+    );
+    let slots = *SLOTS.lock().unwrap_or_else(|e| e.into_inner());
+    for (i, name) in model::NAMES.iter().enumerate() {
+        let (stock_ramp, live_ramp, written) = match model::ramp_base(i) {
+            Some(base) => {
+                let live = unsafe { read_ramp(palette.add(base * PALETTE_STRIDE)) };
+                let s = &slots[i];
+                (
+                    if s.owns_ramp { s.stock_ramp } else { live },
+                    live,
+                    s.owns_ramp,
+                )
+            }
+            None => {
+                let live = unsafe { read_ramp(palette.add(YELLOW_RAMP * PALETTE_STRIDE)) };
+                (live, live, false)
+            }
+        };
+        let hd = unsafe {
+            let t = game.table.add(i * TABLE_STRIDE);
+            palcheck::hex(model::rgb_of([*t, *t.add(1), *t.add(2)]))
+        };
+        let hd_stock = slots[i]
+            .stock_table
+            .map(|t| palcheck::hex(model::rgb_of([t[0], t[1], t[2]])))
+            .unwrap_or_else(|| hd.clone());
+        let mut line = format!(
+            "palette check: {} {}: game ramp {}; HD now {} (game's {})",
+            i + 1,
+            name,
+            ramp_text(&stock_ramp),
+            hd,
+            hd_stock
+        );
+        if written {
+            line.push_str(&format!("; plugin wrote ramp {}", ramp_text(&live_ramp)));
+        }
+        if model::ramp_base(i).is_none() {
+            line.push_str("; ramp at 0x0c, read only");
+        }
+        log(W2R_LOG_INFO, &line);
+    }
+}
+
 // ---- Allied Minimap Colors -------------------------------------------------------------------
 
 unsafe fn read8(at: *const u8) -> [u8; allied::SLOTS] {
@@ -846,6 +969,7 @@ unsafe extern "C" fn menu_buttons_detour(view: i32) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if let Some(game) = GAME.get() {
             unsafe { apply(game, &colors()) };
+            unsafe { palette_check(game) };
         }
         allied_tick();
     }));
