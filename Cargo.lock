@@ -620,7 +620,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "w2r-abi"
 version = "1.0.0"
-source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa#57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa"
+source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=42df988d77f2432a82c0986360743679e9921d76#42df988d77f2432a82c0986360743679e9921d76"
 
 [[package]]
 name = "w2r-black-recolor"
@@ -647,12 +647,12 @@ dependencies = [
 [[package]]
 name = "w2r-formats"
 version = "1.0.0"
-source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa#57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa"
+source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=42df988d77f2432a82c0986360743679e9921d76#42df988d77f2432a82c0986360743679e9921d76"
 
 [[package]]
 name = "w2r-loader-lib"
 version = "1.2.0"
-source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa#57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa"
+source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=42df988d77f2432a82c0986360743679e9921d76#42df988d77f2432a82c0986360743679e9921d76"
 dependencies = [
  "sha2",
  "ureq",
@@ -694,7 +694,7 @@ dependencies = [
 [[package]]
 name = "w2r-preview"
 version = "1.0.0"
-source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa#57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa"
+source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=42df988d77f2432a82c0986360743679e9921d76#42df988d77f2432a82c0986360743679e9921d76"
 
 [[package]]
 name = "w2r-publish"
@@ -731,7 +731,7 @@ dependencies = [
 [[package]]
 name = "w2r-stats"
 version = "1.0.0"
-source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa#57036d8410ac46d2eb4b6ff0e4dccb1d8234a0fa"
+source = "git+https://github.com/hastinbe/w2r-mod-loader?rev=42df988d77f2432a82c0986360743679e9921d76#42df988d77f2432a82c0986360743679e9921d76"
 dependencies = [
  "ed25519-dalek",
  "sha2",
