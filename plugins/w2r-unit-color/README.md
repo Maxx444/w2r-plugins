@@ -5,17 +5,23 @@ local: nobody else sees it and the simulation is untouched. Grew out of the "Bla
 [wc2r-plus](https://github.com/Luxray997/wc2r-plus) by Luxray997 (MIT), by way of the Black Recolor
 plugin, which this one replaces.
 
-**Turn Black Recolor off** before enabling Unit Color: both hook the same game function, so the
-second one to load fails (the log says `hook_install returned` with a conflict). Black Recolor's
-pink/cyan setting does not carry over; pick the "Black to pink" or "Black to cyan" profile.
+**Replaces Black Recolor** (`replaces` in `plugin.json`): when Unit Color loads, the loader skips
+Black Recolor (`E_REPLACED`), and the manager turns Black Recolor off when Unit Color is installed
+enabled. If Unit Color fails to load, Black Recolor keeps running. Black Recolor's pink/cyan setting
+does not carry over yet; pick the "Black to pink" or "Black to cyan" profile. Needs a W2R Mod
+Loader that knows `replaces` (an older one refuses this manifest as `unknown_field`).
 
 ## Credits
+
+Based on Black Recolor by Beau Hastings, a port of the Black2Pink option of wc2r-plus by Luxray997
+(MIT; see [LICENSE](LICENSE)).
 
 - **Beau Hastings** (hastinbe):
   [Black Recolor](https://github.com/hastinbe/w2r-plugins/tree/main/plugins/w2r-black-recolor),
   which this plugin replaces, and the W2R Mod Loader.
 - **Luxray997**: [wc2r-plus](https://github.com/Luxray997/wc2r-plus) (MIT), whose "Black2Pink"
-  option is where the recolor started.
+  option Black Recolor ported. Unit Color still carries that code: the ramp shading, the pink and
+  cyan values, and how the palette and HD table are written and put back.
 - **mauritsschelvis87**: [War_2_Remastered_Mods](https://github.com/mauritsschelvis87-crypto/War_2_Remastered_Mods),
   the inspiration for Unit Color.
 - **Lambchops**: *Allied Colors* for the Battle.net Edition
@@ -119,7 +125,8 @@ Combat Edition plugin used Insert; F1 is the default here; in testing the game d
 | Everyone else (enemies) | The stock red dot |
 
 - The red is the first entry of the red team ramp, so a custom **Player 1 (Red)** color also
-  changes the enemy dots. The blue is a shared palette entry and is always the stock blue.
+  changes the enemy dots. The blue is a shared palette entry and is always the stock blue, so a
+  custom **Player 2 (Blue)** color does not change the ally dots.
 - "Allied" is your side of the game's diplomacy: a player you have set to allied. Change
   alliances in the match and the minimap follows on the next frame.
 - Observers and replays: not tested. If the game gives no local player among the eight, it does

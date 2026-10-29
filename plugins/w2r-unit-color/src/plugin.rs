@@ -1190,10 +1190,9 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
             ui,
             "File: plugins\\w2r-unit-color\\data\\color_profiles.json in your w2r folder.",
         );
-        label(
-            ui,
-            "Credits: Beau Hastings (Black Recolor), Luxray997 (wc2r-plus).",
-        );
+        // The host cuts a label at 128 bytes, so the credit takes two lines.
+        label(ui, "Based on Black Recolor by Beau Hastings, a port of the");
+        label(ui, "Black2Pink option of wc2r-plus by Luxray997.");
         label(
             ui,
             "Inspired by mauritsschelvis87 (War_2_Remastered_Mods) and Lambchops (Allied Colors).",
