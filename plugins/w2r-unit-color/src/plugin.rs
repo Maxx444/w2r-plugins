@@ -67,7 +67,7 @@ type MenuButtonsFn = unsafe extern "C" fn(i32);
 
 /// `W2rUi.color_edit`: a caption, a swatch and a button that opens the host's color editor over
 /// a 7-byte `rrggbb` + NUL buffer; 1 when OK picked a different color. Appended to `W2rUi` by a
-/// W2R Mod Loader with card widgets (proposed in hastinbe/w2r-mod-loader#3); the w2r-abi this
+/// W2R Mod Loader with card widgets (hastinbe/w2r-mod-loader#5); the w2r-abi this
 /// workspace pins predates it, so the fields are declared here and used only when
 /// `struct_size` says the host has them.
 type ColorEditFn = unsafe extern "C" fn(*mut c_void, W2rStr, *mut u8) -> i32;

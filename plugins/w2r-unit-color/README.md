@@ -64,8 +64,8 @@ change the dropdown and a picker in the same visit, the profile wins.
 | Row | What it does |
 |---|---|
 | `>> IN USE: ... <<` | Only on a W2R Mod Loader without card dropdowns (otherwise the Color Profile dropdown shows it): the profile whose colors are in use, "Game default", or "Custom colors". |
-| `Player 1 (Red)` .. `Player 8 (Yellow)` | One row per team color: on a W2R Mod Loader with card color rows (`W2rUi.color_edit`, proposed in hastinbe/w2r-mod-loader#3), a swatch and a `#rrggbb` button that opens the same color editor as Options; otherwise a text box with `#RRGGBB` (type a new one to apply it at once; clear the box for the game's own color). Picking the game's own color leaves that team unchanged. The Options pickers show a change the next time the screen opens. |
-| `Color Profile` (dropdown) | On a W2R Mod Loader with card dropdowns (`W2rUi.combo`, proposed in hastinbe/w2r-mod-loader#3): the same list as Options > Unit Color (Custom, Game default, then the first 14 profiles in `color_profiles.json`), read live from the file. A pick applies at once: the colors, the swatches and the Profile name box follow. It shows the profile in use, or Custom. Profiles after the 14th cannot be reached from the card. |
+| `Player 1 (Red)` .. `Player 8 (Yellow)` | One row per team color: on a W2R Mod Loader with card color rows (`W2rUi.color_edit`, hastinbe/w2r-mod-loader#5), a swatch and a `#rrggbb` button that opens the same color editor as Options; otherwise a text box with `#RRGGBB` (type a new one to apply it at once; clear the box for the game's own color). Picking the game's own color leaves that team unchanged. The Options pickers show a change the next time the screen opens. |
+| `Color Profile` (dropdown) | On a W2R Mod Loader with card dropdowns (`W2rUi.combo`, hastinbe/w2r-mod-loader#5): the same list as Options > Unit Color (Custom, Game default, then the first 14 profiles in `color_profiles.json`), read live from the file. A pick applies at once: the colors, the swatches and the Profile name box follow. It shows the profile in use, or Custom. Profiles after the 14th cannot be reached from the card. |
 | `Profile` + `Apply profile` (only without card dropdowns) | Game default, then every profile in `color_profiles.json`, including ones added since the game started. |
 | `Profile name`, `Save current colors as this profile` | Saves the colors in use into `color_profiles.json`, replacing a profile of the same name. Moving the slider fills in that profile's name. |
 | `Delete this profile` | Asks "Delete "name"? This cannot be undone." for the profile shown in the Color Profile dropdown (without card dropdowns: chosen with the slider), then `Yes, delete it` removes it from `color_profiles.json` and `No, keep it` does nothing. The colors in use are not changed. Game default, Classic and Remastered cannot be deleted. |
@@ -216,7 +216,7 @@ color at the start of a match.
   War_2_Remastered_Mods color tool has the same limit.
 - **Score screen:** the colored bars after a match come from the game's skin file
   (`fe_endgame_stats_bar_0` .. `_7` in `Data\skins\skins.json`), not from the color table. A W2R Mod
-  Loader with score screen bars (proposed in hastinbe/w2r-mod-loader#3, item 4) recolors them
+  Loader with score screen bars (hastinbe/w2r-mod-loader#7) recolors them
   from the color table, so they follow the colors in use: the bright half is the team's color, the
   dark half is half of it, as in the stock skins. On a loader without it they stay stock.
 - **Restores:** choosing Game default, or unloading the plugin, writes the stock values back. The
@@ -238,9 +238,9 @@ Tested in game on build 1.0.2.2818, in multiplayer matches against
 
 - a **player vs player** multiplayer match (another person on another computer);
 - Allied Minimap Colors as an observer or in a replay;
-- the card widgets, the profile dropdown on the card and the score screen bars on hastinbe's
-  W2R Mod Loader, since they need the host changes proposed in hastinbe/w2r-mod-loader#3 (tested
-  on a build with those changes);
+- the card widgets, the profile dropdown on the card and the score screen bars on a W2R Mod
+  Loader release (tested on a build of the same changes, hastinbe/w2r-mod-loader#4 to #7, before
+  they were merged);
 - the card's fallback on a loader without those changes (text boxes, slider and `Apply profile`)
   since the card widgets were added in 0.2.0.
 
