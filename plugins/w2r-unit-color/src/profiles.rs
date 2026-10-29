@@ -37,13 +37,16 @@ pub struct Warning {
 /// Every profile in the file, in file order, with what was skipped. `Err` when the file is not
 /// JSON at all or has no list of profiles; then nothing may be written over it.
 pub fn parse(text: &str) -> Result<(Vec<Profile>, Vec<Warning>), &'static str> {
-    let doc = json::parse(text).ok_or("not valid JSON")?;
+    let doc = json::parse(text).map_err(|code| match code {
+        "duplicate_key" => "not valid JSON (a key appears twice in one object)",
+        _ => "not valid JSON",
+    })?;
     let list = doc.get("profiles").or_else(|| doc.get("items"));
     let items: Vec<&Value> = match (list, &doc) {
-        (Some(Value::Arr(items)), _) => items.iter().collect(),
+        (Some(Value::Array(items)), _) => items.iter().collect(),
         (Some(_), _) => return Err("\"profiles\" is not a list"),
-        (None, Value::Arr(items)) => items.iter().collect(),
-        (None, Value::Obj(_)) => vec![&doc],
+        (None, Value::Array(items)) => items.iter().collect(),
+        (None, Value::Object(_)) => vec![&doc],
         (None, _) => return Err("expected a list of profiles"),
     };
     let mut out: Vec<Profile> = Vec::new();
@@ -78,17 +81,17 @@ pub fn parse(text: &str) -> Result<(Vec<Profile>, Vec<Warning>), &'static str> {
 const OWN_KEYS: [&str; 3] = ["players", "name", "author"];
 
 fn profile_of(item: &Value, entry: usize) -> Result<Profile, &'static str> {
-    let Value::Obj(_) = item else {
+    let Value::Object(_) = item else {
         return Err("not an object");
     };
     // `{"name", "colors": {...}}`, or the colors object itself.
     let colors = match item.get("colors") {
-        Some(c @ Value::Obj(_)) => c,
+        Some(c @ Value::Object(_)) => c,
         Some(_) => return Err("\"colors\" is not an object"),
         None => item,
     };
     let players = match colors.get("players") {
-        Some(Value::Arr(players)) => players,
+        Some(Value::Array(players)) => players,
         Some(_) => return Err("\"players\" is not a list"),
         None => return Err("no \"players\" list"),
     };
@@ -96,15 +99,16 @@ fn profile_of(item: &Value, entry: usize) -> Result<Profile, &'static str> {
     for (n, entry) in players.iter().enumerate() {
         let (slot, color) = match entry {
             // Eight colors in player order.
-            Value::Str(s) => (n, s.as_str()),
-            Value::Obj(_) => {
-                let p = entry
+            Value::String(s) => (n, s.as_str()),
+            Value::Object(_) => {
+                let number = entry
                     .get("player")
-                    .and_then(Value::as_f64)
+                    .and_then(Value::as_number)
                     .ok_or("a player has no number")?;
-                if p.fract() != 0.0 || !(1.0..=PLAYERS as f64).contains(&p) {
-                    return Err("a player number is not 1 to 8");
-                }
+                let p = number
+                    .as_u64()
+                    .filter(|p| (1..=PLAYERS as u64).contains(p))
+                    .ok_or("a player number is not 1 to 8")?;
                 let color = entry
                     .get("color")
                     .and_then(Value::as_str)
@@ -120,7 +124,7 @@ fn profile_of(item: &Value, entry: usize) -> Result<Profile, &'static str> {
     }
     let text = |k| item.get(k).and_then(Value::as_str).unwrap_or("");
     let extra = match colors {
-        Value::Obj(fields) => fields
+        Value::Object(fields) => fields
             .iter()
             .filter(|(k, _)| !OWN_KEYS.contains(&k.as_str()))
             .cloned()
@@ -137,7 +141,10 @@ fn profile_of(item: &Value, entry: usize) -> Result<Profile, &'static str> {
 /// The whole file for `profiles`. Players with the game's own color are left out.
 pub fn write(profiles: &[Profile]) -> String {
     let list = profiles.iter().map(to_value).collect();
-    json::pretty(&Value::Obj(vec![("profiles".into(), Value::Arr(list))]))
+    json::pretty(&Value::Object(vec![(
+        "profiles".into(),
+        Value::Array(list),
+    )]))
 }
 
 fn to_value(p: &Profile) -> Value {
@@ -147,17 +154,17 @@ fn to_value(p: &Profile) -> Value {
         .enumerate()
         .filter_map(|(i, c)| {
             let rgb = (*c)?;
-            Some(Value::Obj(vec![
-                ("player".into(), Value::Num((i + 1) as f64)),
-                ("color".into(), Value::Str(model::to_hex(rgb))),
+            Some(Value::Object(vec![
+                ("player".into(), json::int((i + 1) as u64)),
+                ("color".into(), Value::String(model::to_hex(rgb))),
             ]))
         })
         .collect();
-    let mut colors = vec![("players".to_string(), Value::Arr(players))];
+    let mut colors = vec![("players".to_string(), Value::Array(players))];
     colors.extend(p.extra.iter().cloned());
-    Value::Obj(vec![
-        ("name".into(), Value::Str(p.name.clone())),
-        ("colors".into(), Value::Obj(colors)),
+    Value::Object(vec![
+        ("name".into(), Value::String(p.name.clone())),
+        ("colors".into(), Value::Object(colors)),
     ])
 }
 

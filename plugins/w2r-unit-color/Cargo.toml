@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 w2r-abi.workspace = true
+w2r-formats.workspace = true
 
 [lints.clippy]
 # Detours are called by the game; the ABI header documents the contract.

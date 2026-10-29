@@ -188,7 +188,12 @@ Each profile is a warcraft2.site / W2 Toolkit preset with a name:
   is skipped; the rest still load, and the card and the log say which profile (counting from 1).
   At most 64 profiles and 1 MiB are read.
 - If the file is not valid JSON at all, no profiles load and saving is refused, so nothing is
-  written over it; fix it and press Reload.
+  written over it; fix it and press Reload. The JSON is read strictly (the same reader as the
+  W2R Mod Loader's `plugin.json`): a key twice in one object (two `"name"`s in one profile, say,
+  from pasting a preset into another), an escaped half of an emoji (`\ud83d` on its own), or more
+  than 32 nested lists and objects makes the whole file invalid. A byte order mark at the start
+  (Notepad adds one) is fine. `player` must be a whole number written without a decimal point
+  (`1`, not `1.0`).
 - Saving rewrites the whole file in this layout (two-space indents).
 
 ## What changes, and what does not

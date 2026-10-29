@@ -743,6 +743,7 @@ name = "w2r-unit-color"
 version = "0.2.1"
 dependencies = [
  "w2r-abi",
+ "w2r-formats",
 ]
 
 [[package]]
