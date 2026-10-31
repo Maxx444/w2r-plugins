@@ -115,6 +115,19 @@ pub fn scale(values: impl IntoIterator<Item = u8>) -> Scale {
     s
 }
 
+/// The graphics mode for the log, from the game's `GraphicsMode` word (a host symbol from W2R Mod
+/// Loader 1.1.4: 0 classic, 1 HD, 2 and 3 while switching). `None` while switching, so nothing is
+/// logged mid-switch; no symbol reads as unknown.
+pub fn graphics_text(mode: Option<u32>) -> Option<&'static str> {
+    match mode {
+        None => Some("unknown (this loader has no GraphicsMode symbol)"),
+        Some(0) => Some("classic (CG)"),
+        Some(1) => Some("HD"),
+        Some(2 | 3) => None,
+        Some(_) => Some("unknown (unexpected GraphicsMode value)"),
+    }
+}
+
 /// `#RRGGBB`.
 pub fn hex([r, g, b]: [u8; 3]) -> String {
     format!("#{r:02X}{g:02X}{b:02X}")
@@ -156,6 +169,16 @@ mod tests {
         assert_eq!(scaled.max, 255);
         assert_eq!(scale([1u8, 2, 3]).conversion, Conversion::Unclear);
         assert_eq!(scale([]).conversion, Conversion::Unclear);
+    }
+
+    #[test]
+    fn graphics_mode_is_named_and_switching_is_skipped() {
+        assert_eq!(graphics_text(Some(0)), Some("classic (CG)"));
+        assert_eq!(graphics_text(Some(1)), Some("HD"));
+        assert_eq!(graphics_text(Some(2)), None);
+        assert_eq!(graphics_text(Some(3)), None);
+        assert!(graphics_text(None).unwrap().starts_with("unknown"));
+        assert!(graphics_text(Some(7)).unwrap().starts_with("unknown"));
     }
 
     #[test]

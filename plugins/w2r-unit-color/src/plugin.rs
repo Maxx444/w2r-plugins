@@ -202,8 +202,12 @@ static HOTKEY: AtomicI32 = AtomicI32::new(0x70);
 /// True while the live minimap table holds what the plugin wrote.
 static MINIMAP_OWNED: AtomicBool = AtomicBool::new(false);
 static KEY: Mutex<allied::Toggle> = Mutex::new(allied::Toggle::new());
-/// The palette check's last report: palette address, which terrain palette, colours wanted.
-static CHECKED: Mutex<Option<(usize, Option<&'static str>, Colors)>> = Mutex::new(None);
+/// The palette check's last report: palette address, which terrain palette, colours wanted,
+/// graphics mode.
+type Checked = (usize, Option<&'static str>, Colors, &'static str);
+static CHECKED: Mutex<Option<Checked>> = Mutex::new(None);
+/// `GraphicsMode` (W2R Mod Loader 1.1.4 and later), looked up once; `None` on an older loader.
+static GRAPHICS_MODE: OnceLock<Option<usize>> = OnceLock::new();
 
 fn host() -> Option<&'static W2rHost> {
     unsafe { HOST.load(Ordering::Acquire).as_ref() }
@@ -734,10 +738,18 @@ unsafe fn palette_check(game: &Game) {
         let at = unsafe { palette.add(i * PALETTE_STRIDE) };
         unsafe { [*at, *at.add(1), *at.add(2)] }
     };
+    let mode = GRAPHICS_MODE
+        .get_or_init(|| lookup("GraphicsMode"))
+        // SAFETY: the game's graphics mode word, read on the game's thread.
+        .map(|a| unsafe { core::ptr::read_volatile(a as *const u32) });
+    // Mid-switch (2 or 3): check again once the mode has settled.
+    let Some(graphics) = palcheck::graphics_text(mode) else {
+        return;
+    };
     let known = palcheck::identify(entry);
     let label = known.map(|k| k.label);
     let wanted = colors();
-    let key = (palette as usize, label, wanted);
+    let key = (palette as usize, label, wanted, graphics);
     {
         let mut last = CHECKED.lock().unwrap_or_else(|e| e.into_inner());
         if last.as_ref() == Some(&key) {
@@ -759,8 +771,9 @@ unsafe fn palette_check(game: &Game) {
     log(
         W2R_LOG_INFO,
         &format!(
-            "palette check: profile {}; terrain {}; TilesetCurrent raw {} (unverified meaning); palette at 0x{:08x}",
+            "palette check: profile {}; graphics {}; terrain {}; TilesetCurrent raw {} (unverified meaning); palette at 0x{:08x}",
             profile_in_use(&wanted),
+            graphics,
             label.unwrap_or("not one of the four BNE palettes"),
             tileset,
             palette as usize
