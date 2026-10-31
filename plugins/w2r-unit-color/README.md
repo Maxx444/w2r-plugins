@@ -7,9 +7,11 @@ plugin, which this one replaces.
 
 **Replaces Black Recolor** (`replaces` in `plugin.json`): when Unit Color loads, the loader skips
 Black Recolor (`E_REPLACED`), and the manager turns Black Recolor off when Unit Color is installed
-enabled. If Unit Color fails to load, Black Recolor keeps running. Black Recolor's pink/cyan setting
-does not carry over yet; pick the "Black to pink" or "Black to cyan" profile. Needs a W2R Mod
-Loader that knows `replaces` (an older one refuses this manifest as `unknown_field`).
+enabled. If Unit Color fails to load, Black Recolor keeps running. Needs a W2R Mod Loader that
+knows `replaces` (an older one refuses this manifest as `unknown_field`).
+
+**Coming from Black Recolor?** Its pink or cyan setting is not read. Pick the "Black to pink" or
+"Black to cyan" profile in Options > Unit Color (or on the plugin card) and press Apply.
 
 ## Credits
 
