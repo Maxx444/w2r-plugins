@@ -365,7 +365,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         W2R_SETTING_STRING,
         model::NAME_KEY,
         "Save or Delete Profile Name",
-        "The profile the boxes below save or delete. Applying a profile fills in its name.",
+        "The profile the boxes below save or delete. It shows the chosen profile, or Custom when the colors are no profile; type a new name here to save under it.",
         PROFILE_SUBCATEGORY,
     );
     submit(&d, model::NAME_KEY);
@@ -451,17 +451,20 @@ fn sync_choice(profiles: &[Profile]) {
         }
         *last = index;
         drop(last);
-        follow_name(&listed, index);
+        follow_name(&listed, index, profiles);
     }
 }
 
 /// Makes the options screen's profile name field match dropdown entry `index` (see
 /// `model::name_for_choice`). Shown the next time the Unit Color page is opened.
-fn follow_name(listed: &[String], index: i64) {
+fn follow_name(listed: &[String], index: i64, profiles: &[Profile]) {
     if !DECLARED.load(Ordering::Relaxed) {
         return;
     }
-    if let Some(name) = model::name_for_choice(listed, index, &get_str(model::NAME_KEY)) {
+    let cur = colors();
+    let saved = model::matching(profiles, &cur, &stock()).map(|p| p.name.as_str());
+    let current = get_str(model::NAME_KEY);
+    if let Some(name) = model::name_for_choice(listed, index, &current, saved) {
         set_str(model::NAME_KEY, &name);
     }
 }
@@ -944,7 +947,7 @@ fn choose(page: &mut Page, c: Colors) {
 /// Removes the profile named `name` from the file. The colours in use stay as they are.
 fn delete_named(page: &mut Page, name: &str) -> String {
     let name = name.trim();
-    if name.is_empty() {
+    if name.is_empty() || model::is_custom_name(name) {
         return "Nothing deleted: no profile name".into();
     }
     if model::is_protected(name) {
@@ -978,7 +981,7 @@ fn delete_named(page: &mut Page, name: &str) -> String {
 /// Saves the colours in use as a profile named by the name box.
 fn save_current(page: &mut Page) -> String {
     let name = model::clean_name(&text_of(&page.name), "");
-    if name.is_empty() {
+    if name.is_empty() || model::is_custom_name(&name) {
         return "Type a profile name first".into();
     }
     if model::is_protected(&name) {
@@ -1325,7 +1328,7 @@ fn settings_changed() {
     set_colors(next);
     refill(page, &next);
     if profile.is_some() {
-        follow_name(&listed, picked);
+        follow_name(&listed, picked, &page.profiles);
     }
     let checked = |key| get_i64(key) == 1;
     let (save, delete, yes) = (
@@ -1362,6 +1365,10 @@ fn settings_changed() {
         page.status = note;
     }
     sync_choice(&page.profiles);
+    // Also when the dropdown did not change (Custom stays Custom): a name typed but not saved
+    // goes back to "Custom".
+    let index = *LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner());
+    follow_name(&listed, index, &page.profiles);
 }
 
 /// Puts a profile's name in the options screen's Profile Name field (shown on the next visit), so

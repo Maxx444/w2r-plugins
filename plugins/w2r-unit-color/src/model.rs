@@ -187,21 +187,46 @@ pub fn choice_target(listed: &[String], index: i64) -> Option<Option<&str>> {
     }
 }
 
+/// What the profile name field shows while the colors match no profile.
+pub const CUSTOM_NAME: &str = "Custom";
+
+/// Whether `name` is [`CUSTOM_NAME`], which is never saved or deleted as a profile name.
+pub fn is_custom_name(name: &str) -> bool {
+    name.trim().eq_ignore_ascii_case(CUSTOM_NAME)
+}
+
 /// What the options screen's profile name field should hold once the dropdown shows entry
-/// `index`, given the name it holds now; `None` to leave it. A listed profile puts its own name
-/// there. Game default empties the field when it names a profile (listed or built in), so the
-/// field does not keep offering the last profile; a new name typed for saving is kept. Custom
-/// leaves the field alone, since that is how a changed profile is saved under its name.
-pub fn name_for_choice(listed: &[String], index: i64, current: &str) -> Option<String> {
-    let current = current.trim();
-    match choice_target(listed, index)? {
-        Some(name) => (!current.eq_ignore_ascii_case(name)).then(|| name.to_string()),
-        None => {
-            let names_profile =
-                is_protected(current) || listed.iter().any(|n| n.eq_ignore_ascii_case(current));
-            (!current.is_empty() && names_profile).then(String::new)
-        }
-    }
+/// `index`, given the name it holds now; `None` to leave it. `saved` is the profile in the file
+/// whose colors are the ones in use, if any (one saved this session is in the file but not yet in
+/// the dropdown, which is read at launch).
+///
+/// - A listed profile: its own name.
+/// - Custom: "Custom", or the name of `saved`, so a name typed but not saved does not stay.
+/// - Game default: empty when the field holds "Custom" or a profile's name; a new name typed for
+///   saving is kept.
+pub fn name_for_choice(
+    listed: &[String],
+    index: i64,
+    current: &str,
+    saved: Option<&str>,
+) -> Option<String> {
+    let want = match index {
+        CHOICE_CUSTOM => saved.unwrap_or(CUSTOM_NAME).to_string(),
+        _ => match choice_target(listed, index)? {
+            Some(name) => name.to_string(),
+            None => {
+                let c = current.trim();
+                let names_profile = is_custom_name(c)
+                    || is_protected(c)
+                    || listed.iter().any(|n| n.eq_ignore_ascii_case(c));
+                if c.is_empty() || !names_profile {
+                    return None;
+                }
+                String::new()
+            }
+        },
+    };
+    (current != want).then_some(want)
 }
 
 /// Parses `#RRGGBB` or `RRGGBB` (surrounding spaces allowed, any case).
@@ -520,33 +545,35 @@ mod tests {
     #[test]
     fn the_name_field_follows_the_dropdown() {
         let listed = vec!["Classic".to_string(), "Mine".to_string()];
-        // Game default empties a profile's name, built in or listed, in any case.
+        let to = |i, cur, saved| name_for_choice(&listed, i, cur, saved);
+        // Game default empties "Custom" or a profile's name, built in or listed, in any case...
         assert_eq!(
-            name_for_choice(&listed, CHOICE_GAME_DEFAULT, "Classic"),
+            to(CHOICE_GAME_DEFAULT, "Classic", None),
             Some(String::new())
         );
+        assert_eq!(to(CHOICE_GAME_DEFAULT, " mine ", None), Some(String::new()));
         assert_eq!(
-            name_for_choice(&listed, CHOICE_GAME_DEFAULT, " mine "),
+            to(CHOICE_GAME_DEFAULT, "Remastered", None),
             Some(String::new())
         );
-        assert_eq!(
-            name_for_choice(&listed, CHOICE_GAME_DEFAULT, "Remastered"),
-            Some(String::new())
-        );
+        assert_eq!(to(CHOICE_GAME_DEFAULT, "custom", None), Some(String::new()));
         // ...but keeps a new name and leaves an empty field alone.
-        assert_eq!(
-            name_for_choice(&listed, CHOICE_GAME_DEFAULT, "New one"),
-            None
-        );
-        assert_eq!(name_for_choice(&listed, CHOICE_GAME_DEFAULT, ""), None);
+        assert_eq!(to(CHOICE_GAME_DEFAULT, "New one", None), None);
+        assert_eq!(to(CHOICE_GAME_DEFAULT, "", None), None);
         // A listed profile puts its name there unless it is there already.
+        assert_eq!(to(3, "Classic", None), Some("Mine".to_string()));
+        assert_eq!(to(3, "Mine", None), None);
+        // Custom shows "Custom", whatever was typed, unless the colors are a saved profile.
+        assert_eq!(to(CHOICE_CUSTOM, "Mine", None), Some("Custom".to_string()));
+        assert_eq!(to(CHOICE_CUSTOM, "Test", None), Some("Custom".to_string()));
+        assert_eq!(to(CHOICE_CUSTOM, "Custom", None), None);
         assert_eq!(
-            name_for_choice(&listed, 3, "Classic"),
-            Some("Mine".to_string())
+            to(CHOICE_CUSTOM, "Custom", Some("Test")),
+            Some("Test".to_string())
         );
-        assert_eq!(name_for_choice(&listed, 3, "mine"), None);
-        // Custom and out of range leave it.
-        assert_eq!(name_for_choice(&listed, CHOICE_CUSTOM, "Classic"), None);
-        assert_eq!(name_for_choice(&listed, 9, "Classic"), None);
+        assert_eq!(to(CHOICE_CUSTOM, "Test", Some("Test")), None);
+        // Out of range leaves it.
+        assert_eq!(to(9, "Classic", None), None);
+        assert!(is_custom_name(" CUSTOM ") && !is_custom_name("Customs"));
     }
 }

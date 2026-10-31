@@ -41,8 +41,10 @@ Based on Black Recolor by Beau Hastings, a port of the Black2Pink option of wc2r
     **It lists up to 14 profiles** (the host allows 16 entries, and Custom and Game default take
     two). The six profiles the plugin starts with count toward the 14. Profiles after the 14th
     stay in the file and can be applied from the plugin card; the file holds up to 64.
-  - **Save or Delete Profile Name:** the profile the boxes below save or delete. Applying a profile
-    fills in its name.
+  - **Save or Delete Profile Name:** the profile the boxes below save or delete. It follows the
+    Color Profile dropdown: a profile's name, empty for Game default, and "Custom" when the colors
+    are no profile (a name typed but not saved goes back to "Custom" on Apply). "Custom" itself is
+    never saved or deleted; type a new name to save the colors under it.
   - **Save Colors as Profile on Apply:** check it and press Apply: the colors below are saved under
     that name, replacing a profile of the same name. Editing a profile is: choose it, Apply, change
     colors, check Save, Apply.
