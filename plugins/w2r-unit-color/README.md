@@ -136,8 +136,10 @@ Combat Edition plugin used Insert; F1 is the default here; in testing the game d
   custom **Player 2 (Blue)** color does not change the ally dots.
 - "Allied" is your side of the game's diplomacy: a player you have set to allied. Change
   alliances in the match and the minimap follows on the next frame.
-- Observers and replays: not tested. If the game gives no local player among the eight, it does
-  nothing; if it does, everyone not allied to that slot shows red. Turn it off there.
+- In a replay (the W2R Mod Loader's replay viewer) it works from the seat the replay was recorded
+  in: that player keeps their color and everyone not allied to them shows red.
+- As an observer: not tested. If the game gives no local player among the eight, it does nothing;
+  if it does, everyone not allied to that slot shows red. Turn it off there.
 
 ### How it works
 
@@ -240,19 +242,24 @@ color at the start of a match.
 
 ## Testing
 
-Tested in game on build 1.0.2.2818, in multiplayer matches against
-**computer players only**. Not tested:
+Tested in game on build 1.0.2.2818:
 
-- a **player vs player** multiplayer match (another person on another computer);
-- Allied Minimap Colors as an observer or in a replay;
+- multiplayer matches against computer players;
+- a **player vs player** match: three people on three computers (one without the mod loader, one
+  on an older loader), 27,165 turns on Garden of War, with profiles applied during the match about
+  a dozen times. No desync: the loader's sync check found no mismatch. Each player sees only their
+  own colors; nothing is sent to other players and the simulation is not touched;
+- **Apply in the in-match options** (the pause menu's Options > Unit Color) on all four terrains
+  (Forest, Winter, Wasteland, Swamp), in classic and HD graphics, including after switching
+  graphics with F5 during the match;
+- Allied Minimap Colors and profile changes in a **replay** (the W2R Mod Loader's replay viewer),
+  in classic and HD graphics.
+
+Not tested:
+
+- Allied Minimap Colors as an observer;
 - the card widgets, the profile dropdown on the card and the score screen bars on a W2R Mod
-  Loader release (tested on a build of the same changes, hastinbe/w2r-mod-loader#4 to #7, before
-  they were merged);
+  Loader release (tested on loaders built from its main branch, which has them since
+  hastinbe/w2r-mod-loader#4 to #7 were merged);
 - the card's fallback on a loader without those changes (text boxes, slider and `Apply profile`)
-  since the card widgets were added in 0.2.0;
-- **Apply in the in-match options** (the pause menu's Options > Unit Color) needs more testing:
-  a few profile changes there were tried in one match (the log shows the colors written on each
-  Apply), not more.
-
-Each player sees only their own colors (nothing is sent to other players and the simulation is not
-touched), so a player vs player match should behave the same, but that has not been checked.
+  since the card widgets were added in 0.2.0.
