@@ -40,6 +40,13 @@ pub const HOTKEYS: [(&str, i32); 5] = [
 /// F1, the default.
 pub const DEFAULT_HOTKEY: i64 = 0;
 
+/// The options screen's texts for the checkbox and the hotkey (the host refuses a setting whose
+/// description is over 256 bytes or label over 64).
+pub const ENABLED_LABEL: &str = "Allied Minimap Colors";
+pub const ENABLED_DESCRIPTION: &str = "On the minimap, allies are blue and enemies red; your own units keep their color. The hotkey below turns it on and off in a match. Inspired by Lambchops' Allied Colors for the Battle.net Edition.";
+pub const HOTKEY_LABEL: &str = "Allied Minimap Colors Hotkey";
+pub const HOTKEY_DESCRIPTION: &str = "Press it in a match to turn Allied Minimap Colors on or off (not while chatting). Default F1. F2, F3 and F4 also jump the camera to a saved location, as the game uses them too.";
+
 /// The hotkey choice stored as `index`: its label and virtual-key code. Out of range is F1.
 pub fn hotkey(index: i64) -> (&'static str, i32) {
     usize::try_from(index)
@@ -283,5 +290,16 @@ mod tests {
         assert_eq!(t.press(true, true), Press::None); // chat closed, key still down
         assert_eq!(t.press(false, true), Press::None);
         assert_eq!(t.press(true, true), Press::Toggle);
+    }
+
+    #[test]
+    fn options_texts_fit_the_hosts_limits() {
+        for (label, description) in [
+            (ENABLED_LABEL, ENABLED_DESCRIPTION),
+            (HOTKEY_LABEL, HOTKEY_DESCRIPTION),
+        ] {
+            assert!(label.len() <= 64, "{label}");
+            assert!(description.len() <= 256, "{label}: {}", description.len());
+        }
     }
 }

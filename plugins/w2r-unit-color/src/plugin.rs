@@ -352,11 +352,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
     d.choices = strs.as_ptr();
     d.choice_count = strs.len() as u32;
     submit(&d, model::PROFILE_KEY);
-    *LISTED.lock().unwrap_or_else(|e| e.into_inner()) = profiles
-        .iter()
-        .take(model::MAX_LISTED)
-        .map(|p| p.name.clone())
-        .collect();
+    *LISTED.lock().unwrap_or_else(|e| e.into_inner()) = model::listed_names(profiles);
 
     // Saving and deleting from the options screen: the profile's name, a checkbox that makes the
     // next Apply save under it, and two that make it delete it (the second is the "are you sure",
@@ -364,32 +360,32 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
     let d = def(
         W2R_SETTING_STRING,
         model::NAME_KEY,
-        "Save or Delete Profile Name",
-        "The profile the boxes below save or delete. It shows the chosen profile, or Custom when the colors are no profile; type a new name here to save under it.",
+        model::NAME_LABEL,
+        model::NAME_DESCRIPTION,
         PROFILE_SUBCATEGORY,
     );
     submit(&d, model::NAME_KEY);
     let d = def(
         W2R_SETTING_BOOL,
         model::SAVE_KEY,
-        "Save Colors as Profile on Apply",
-        "Check, then press Apply: the colors below are saved to color_profiles.json under the name above, replacing a profile of the same name. A new name joins the Color Profile list at the next start.",
+        model::SAVE_LABEL,
+        model::SAVE_DESCRIPTION,
         PROFILE_SUBCATEGORY,
     );
     submit(&d, model::SAVE_KEY);
     let d = def(
         W2R_SETTING_BOOL,
         model::DELETE_KEY,
-        "Delete This Profile on Apply",
-        "Check, then also check Yes below and press Apply: the profile named above is removed from color_profiles.json. The colors in use stay. It leaves the Color Profile list at the next start.",
+        model::DELETE_LABEL,
+        model::DELETE_DESCRIPTION,
         PROFILE_SUBCATEGORY,
     );
     submit(&d, model::DELETE_KEY);
     let mut d = def(
         W2R_SETTING_BOOL,
         model::CONFIRM_KEY,
-        "Yes, Delete It (Cannot Be Undone)",
-        "Confirms the delete above. Without it, Apply deletes nothing.",
+        model::CONFIRM_LABEL,
+        model::CONFIRM_DESCRIPTION,
         PROFILE_SUBCATEGORY,
     );
     d.active_when = s(model::DELETE_KEY);
@@ -398,10 +394,7 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
     for (i, rgb) in stock.iter().enumerate() {
         let key = model::key(i);
         let label = format!("Player {} ({})", i + 1, model::NAMES[i]);
-        let description = format!(
-            "The {} team color on your screen only. Pick the game's own color to leave it unchanged.",
-            model::NAMES[i]
-        );
+        let description = model::color_description(i);
         let default = model::to_setting(*rgb);
         let mut d = def(W2R_SETTING_COLOR, &key, &label, &description, SUBCATEGORY);
         d.default_str = s(&default);
@@ -413,8 +406,8 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         let d = def(
             W2R_SETTING_BOOL,
             allied::ENABLED_KEY,
-            "Allied Minimap Colors",
-            "On the minimap, allies are blue and enemies red; your own units keep their color. The hotkey below turns it on and off in a match. Inspired by Lambchops' Allied Colors for the Battle.net Edition.",
+            allied::ENABLED_LABEL,
+            allied::ENABLED_DESCRIPTION,
             ALLIED_SUBCATEGORY,
         );
         submit(&d, allied::ENABLED_KEY);
@@ -422,8 +415,8 @@ fn declare(stock: &[Rgb; PLAYERS], profiles: &[Profile]) -> bool {
         let mut d = def(
             W2R_SETTING_CHOICE,
             allied::HOTKEY_KEY,
-            "Allied Minimap Colors Hotkey",
-            "Press it in a match to turn Allied Minimap Colors on or off (not while chatting). Default F1. F2, F3 and F4 also jump the camera to a saved location, as the game uses them too.",
+            allied::HOTKEY_LABEL,
+            allied::HOTKEY_DESCRIPTION,
             ALLIED_SUBCATEGORY,
         );
         d.default_int = allied::DEFAULT_HOTKEY;
@@ -947,7 +940,7 @@ fn choose(page: &mut Page, c: Colors) {
 /// Removes the profile named `name` from the file. The colours in use stay as they are.
 fn delete_named(page: &mut Page, name: &str) -> String {
     let name = name.trim();
-    if name.is_empty() || model::is_custom_name(name) {
+    if name.is_empty() {
         return "Nothing deleted: no profile name".into();
     }
     if model::is_protected(name) {
@@ -980,13 +973,12 @@ fn delete_named(page: &mut Page, name: &str) -> String {
 
 /// Saves the colours in use as a profile named by the name box.
 fn save_current(page: &mut Page) -> String {
-    let name = model::clean_name(&text_of(&page.name), "");
-    if name.is_empty() || model::is_custom_name(&name) {
+    let typed = model::clean_name(&text_of(&page.name), "");
+    if typed.is_empty() {
         return "Type a profile name first".into();
     }
-    if model::is_protected(&name) {
-        return format!("Not saved: {name} is built in; save under a different name");
-    }
+    // Custom and the built-in names save to the one "Custom" profile.
+    let name = model::save_target(&typed);
     if !page.file_ok {
         return format!("Not saved: {PROFILES_FILE} could not be read; fix it, then Reload");
     }
@@ -1015,7 +1007,11 @@ fn save_current(page: &mut Page) -> String {
     }
     sync_choice(&page.profiles);
     prefill_name(&name);
-    format!("Saved {name} to {PROFILES_FILE}")
+    if name.eq_ignore_ascii_case(&typed) {
+        format!("Saved {name} to {PROFILES_FILE}")
+    } else {
+        format!("Saved as {name} to {PROFILES_FILE} ({typed} is built in)")
+    }
 }
 
 unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
@@ -1220,12 +1216,7 @@ unsafe fn page_ui(ui: &W2rUi, page: &mut Page) {
 /// (the swatches, the boxes and the name fields follow at once). Returns an empty status line when
 /// something was applied (the dropdown itself shows it), to clear an older message.
 unsafe fn profile_dropdown(ui: &W2rUi, combo: ComboFn, page: &mut Page) -> Option<String> {
-    let listed: Vec<String> = page
-        .profiles
-        .iter()
-        .take(model::MAX_LISTED)
-        .map(|p| p.name.clone())
-        .collect();
+    let listed = model::listed_names(&page.profiles);
     let labels = model::choice_labels(&page.profiles);
     let strs: Vec<W2rStr> = labels.iter().map(|l| s(l)).collect();
     let cur = colors();
@@ -1244,7 +1235,13 @@ unsafe fn profile_dropdown(ui: &W2rUi, combo: ComboFn, page: &mut Page) -> Optio
         return None;
     }
     page.confirm_delete = None;
-    match model::choice_target(&listed, i64::from(sel)) {
+    // Custom applies the saved "Custom" profile, when there is one.
+    let custom = model::custom_profile(&page.profiles).map(|p| p.name.clone());
+    let target = match (i64::from(sel), custom.as_deref()) {
+        (model::CHOICE_CUSTOM, Some(name)) => Some(Some(name)),
+        (index, _) => model::choice_target(&listed, index),
+    };
+    match target {
         Some(None) => {
             choose(page, [None; PLAYERS]);
             page.selected = 0;
@@ -1264,7 +1261,7 @@ unsafe fn profile_dropdown(ui: &W2rUi, combo: ComboFn, page: &mut Page) -> Optio
             choose(page, p.colors);
             Some(String::new())
         }
-        // Custom: there is nothing to apply.
+        // Custom without a saved Custom profile: there is nothing to apply.
         None => None,
     }
 }
@@ -1302,8 +1299,13 @@ fn settings_changed() {
     let picked = stored_choice();
     let last = *LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner());
     let listed = LISTED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let custom = model::custom_profile(&page.profiles).map(|p| p.name.clone());
     let profile = if picked != last {
-        model::choice_target(&listed, picked)
+        match (picked, custom.as_deref()) {
+            // Custom applies the saved "Custom" profile, when there is one.
+            (model::CHOICE_CUSTOM, Some(name)) => Some(Some(name)),
+            _ => model::choice_target(&listed, picked),
+        }
     } else {
         None
     };

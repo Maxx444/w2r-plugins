@@ -152,11 +152,74 @@ pub fn profile_action(save: bool, delete: bool, confirmed: bool) -> ProfileActio
     }
 }
 
-/// The dropdown's labels for `profiles`: their names, cut to the host's 64 bytes.
+/// The longest setting description and label the host accepts
+/// (`W2R_MAX_SETTING_DESCRIPTION`, `W2R_MAX_SETTING_LABEL`); a longer one makes it refuse the whole
+/// setting, which then is not on the options screen.
+pub const MAX_DESCRIPTION: usize = 256;
+pub const MAX_LABEL: usize = 64;
+
+/// The options screen's texts for the profile name field and the save and delete boxes.
+pub const NAME_LABEL: &str = "Save or Delete Profile Name";
+pub const NAME_DESCRIPTION: &str = "The profile the boxes below save or delete. Custom when the colors match no profile. Saving as Custom, Game default, Classic or Remastered saves to Custom; another name saves over that profile or makes a new one.";
+pub const SAVE_LABEL: &str = "Save Colors as Profile on Apply";
+pub const SAVE_DESCRIPTION: &str = "Check, then press Apply: the colors below are saved to color_profiles.json under the name above, replacing a profile of the same name. A new name joins the Color Profile list at the next start.";
+pub const DELETE_LABEL: &str = "Delete This Profile on Apply";
+pub const DELETE_DESCRIPTION: &str = "Check, then also check Yes below and press Apply: the profile named above is removed from color_profiles.json. The colors in use stay. It leaves the Color Profile list at the next start.";
+pub const CONFIRM_LABEL: &str = "Yes, Delete It (Cannot Be Undone)";
+pub const CONFIRM_DESCRIPTION: &str =
+    "Confirms the delete above. Without it, Apply deletes nothing.";
+
+/// The description of team color `i`'s picker.
+pub fn color_description(i: usize) -> String {
+    format!(
+        "The {} team color on your screen only. Pick the game's own color to leave it unchanged.",
+        NAMES[i]
+    )
+}
+
+/// The dropdown's entry and the name field's text when the colors match no profile, and the name
+/// of the one saved profile that stands for it.
+pub const CUSTOM_NAME: &str = "Custom";
+
+/// Whether `name` is [`CUSTOM_NAME`], any case.
+pub fn is_custom_name(name: &str) -> bool {
+    name.trim().eq_ignore_ascii_case(CUSTOM_NAME)
+}
+
+/// The saved "Custom" profile, if there is one. It is not listed in the dropdown on its own:
+/// the dropdown's single "Custom" stands for it.
+pub fn custom_profile(profiles: &[Profile]) -> Option<&Profile> {
+    profiles.iter().find(|p| is_custom_name(&p.name))
+}
+
+/// The profile names the dropdown lists after Custom and Game default, in file order, at most
+/// [`MAX_LISTED`], leaving out the saved "Custom" profile.
+pub fn listed_names(profiles: &[Profile]) -> Vec<String> {
+    profiles
+        .iter()
+        .filter(|p| !is_custom_name(&p.name))
+        .take(MAX_LISTED)
+        .map(|p| p.name.clone())
+        .collect()
+}
+
+/// The name a save goes under for `requested` (already cleaned): Custom and the built-in names
+/// (Game default, Classic, Remastered) save to the one "Custom" profile; any other name saves over
+/// that profile or makes a new one.
+pub fn save_target(requested: &str) -> String {
+    if is_custom_name(requested) || is_protected(requested) {
+        CUSTOM_NAME.to_string()
+    } else {
+        requested.to_string()
+    }
+}
+
+/// The dropdown's labels for `profiles`: Custom, Game default and [`listed_names`], cut to the
+/// host's 64 bytes.
 pub fn choice_labels(profiles: &[Profile]) -> Vec<String> {
-    let mut out = vec!["Custom".to_string(), "Game default".to_string()];
-    for p in profiles.iter().take(MAX_LISTED) {
-        let mut label = p.name.clone();
+    let mut out = vec![CUSTOM_NAME.to_string(), "Game default".to_string()];
+    for name in listed_names(profiles) {
+        let mut label = name;
         label.truncate(MAX_CHOICE_LABEL); // ASCII only (clean_name), so any cut is on a boundary
         out.push(label.trim_end().to_string());
     }
@@ -185,14 +248,6 @@ pub fn choice_target(listed: &[String], index: i64) -> Option<Option<&str>> {
             .map(|n| Some(n.as_str())),
         _ => None,
     }
-}
-
-/// What the profile name field shows while the colors match no profile.
-pub const CUSTOM_NAME: &str = "Custom";
-
-/// Whether `name` is [`CUSTOM_NAME`], which is never saved or deleted as a profile name.
-pub fn is_custom_name(name: &str) -> bool {
-    name.trim().eq_ignore_ascii_case(CUSTOM_NAME)
 }
 
 /// What the options screen's profile name field should hold once the dropdown shows entry
@@ -575,5 +630,60 @@ mod tests {
         // Out of range leaves it.
         assert_eq!(to(9, "Classic", None), None);
         assert!(is_custom_name(" CUSTOM ") && !is_custom_name("Customs"));
+    }
+    #[test]
+    fn the_saved_custom_profile_is_the_dropdowns_one_custom() {
+        let p = |n: &str| Profile {
+            name: n.to_string(),
+            colors: [None; PLAYERS],
+            extra: Vec::new(),
+        };
+        let list = vec![p("Classic"), p("custom"), p("Mine")];
+        assert_eq!(
+            listed_names(&list),
+            vec!["Classic".to_string(), "Mine".to_string()]
+        );
+        assert_eq!(
+            choice_labels(&list),
+            vec!["Custom", "Game default", "Classic", "Mine"]
+        );
+        assert_eq!(
+            custom_profile(&list).map(|p| p.name.as_str()),
+            Some("custom")
+        );
+        assert!(custom_profile(&list[..1]).is_none());
+        // Custom and the built-in names save to Custom; other names as typed.
+        for n in [
+            "Custom",
+            " custom ",
+            "Game default",
+            "classic",
+            "Remastered",
+        ] {
+            assert_eq!(save_target(n), "Custom");
+        }
+        assert_eq!(save_target("Mine"), "Mine");
+        assert_eq!(save_target("Custom 2"), "Custom 2");
+    }
+
+    #[test]
+    fn options_texts_fit_the_hosts_limits() {
+        let texts = [
+            (NAME_LABEL, NAME_DESCRIPTION),
+            (SAVE_LABEL, SAVE_DESCRIPTION),
+            (DELETE_LABEL, DELETE_DESCRIPTION),
+            (CONFIRM_LABEL, CONFIRM_DESCRIPTION),
+        ];
+        for (label, description) in texts {
+            assert!(label.len() <= MAX_LABEL, "{label}");
+            assert!(
+                description.len() <= MAX_DESCRIPTION,
+                "{label}: {}",
+                description.len()
+            );
+        }
+        for i in 0..PLAYERS {
+            assert!(color_description(i).len() <= MAX_DESCRIPTION);
+        }
     }
 }

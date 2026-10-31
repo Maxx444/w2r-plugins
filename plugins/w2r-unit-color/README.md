@@ -38,16 +38,19 @@ Based on Black Recolor by Beau Hastings, a port of the Black2Pink option of wc2r
   - **Color Profile:** a dropdown with **Custom** and **Game default**, then the profiles in
     `color_profiles.json` by name, as they were when the game started. Choose one and press Apply.
     It shows the profile whose colors are in use, or Custom once you change a color by hand.
+    There is one **Custom**: it also stands for the saved "Custom" profile (see Save below), and
+    choosing it applies that profile's colors when there is one.
     **It lists up to 14 profiles** (the host allows 16 entries, and Custom and Game default take
     two). The six profiles the plugin starts with count toward the 14. Profiles after the 14th
     stay in the file and can be applied from the plugin card; the file holds up to 64.
   - **Save or Delete Profile Name:** the profile the boxes below save or delete. It follows the
     Color Profile dropdown: a profile's name, empty for Game default, and "Custom" when the colors
-    are no profile (a name typed but not saved goes back to "Custom" on Apply). "Custom" itself is
-    never saved or deleted; type a new name to save the colors under it.
+    are no profile (a name typed but not saved goes back to "Custom" on Apply).
   - **Save Colors as Profile on Apply:** check it and press Apply: the colors below are saved under
     that name, replacing a profile of the same name. Editing a profile is: choose it, Apply, change
-    colors, check Save, Apply.
+    colors, check Save, Apply. Saving as **Custom**, **Game default**, **Classic** or
+    **Remastered** saves to the one "Custom" profile (each save replaces it), so the built-in
+    profiles are never changed.
   - **Delete This Profile on Apply** and **Yes, Delete It (Cannot Be Undone):** check both and press
     Apply to remove the profile named above. Delete alone does nothing (the "Yes" box is greyed
     until it is checked), and Save with Delete does nothing either. The colors in use are not
@@ -246,7 +249,10 @@ Tested in game on build 1.0.2.2818, in multiplayer matches against
   Loader release (tested on a build of the same changes, hastinbe/w2r-mod-loader#4 to #7, before
   they were merged);
 - the card's fallback on a loader without those changes (text boxes, slider and `Apply profile`)
-  since the card widgets were added in 0.2.0.
+  since the card widgets were added in 0.2.0;
+- **Apply in the in-match options** (the pause menu's Options > Unit Color) needs more testing:
+  a few profile changes there were tried in one match (the log shows the colors written on each
+  Apply), not more.
 
 Each player sees only their own colors (nothing is sent to other players and the simulation is not
 touched), so a player vs player match should behave the same, but that has not been checked.
