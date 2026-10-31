@@ -450,6 +450,19 @@ fn sync_choice(profiles: &[Profile]) {
             unsafe { (h.settings_set_i64)(h.token, s(model::PROFILE_KEY), index) };
         }
         *last = index;
+        drop(last);
+        follow_name(&listed, index);
+    }
+}
+
+/// Makes the options screen's profile name field match dropdown entry `index` (see
+/// `model::name_for_choice`). Shown the next time the Unit Color page is opened.
+fn follow_name(listed: &[String], index: i64) {
+    if !DECLARED.load(Ordering::Relaxed) {
+        return;
+    }
+    if let Some(name) = model::name_for_choice(listed, index, &get_str(model::NAME_KEY)) {
+        set_str(model::NAME_KEY, &name);
     }
 }
 
@@ -1311,14 +1324,8 @@ fn settings_changed() {
     *LAST_CHOICE.lock().unwrap_or_else(|e| e.into_inner()) = picked;
     set_colors(next);
     refill(page, &next);
-    if let Some(Some(name)) = profile
-        && let Some(p) = page
-            .profiles
-            .iter()
-            .find(|p| p.name.eq_ignore_ascii_case(name))
-    {
-        let n = p.name.clone();
-        prefill_name(&n);
+    if profile.is_some() {
+        follow_name(&listed, picked);
     }
     let checked = |key| get_i64(key) == 1;
     let (save, delete, yes) = (

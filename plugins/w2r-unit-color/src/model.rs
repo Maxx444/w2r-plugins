@@ -187,6 +187,23 @@ pub fn choice_target(listed: &[String], index: i64) -> Option<Option<&str>> {
     }
 }
 
+/// What the options screen's profile name field should hold once the dropdown shows entry
+/// `index`, given the name it holds now; `None` to leave it. A listed profile puts its own name
+/// there. Game default empties the field when it names a profile (listed or built in), so the
+/// field does not keep offering the last profile; a new name typed for saving is kept. Custom
+/// leaves the field alone, since that is how a changed profile is saved under its name.
+pub fn name_for_choice(listed: &[String], index: i64, current: &str) -> Option<String> {
+    let current = current.trim();
+    match choice_target(listed, index)? {
+        Some(name) => (!current.eq_ignore_ascii_case(name)).then(|| name.to_string()),
+        None => {
+            let names_profile =
+                is_protected(current) || listed.iter().any(|n| n.eq_ignore_ascii_case(current));
+            (!current.is_empty() && names_profile).then(String::new)
+        }
+    }
+}
+
 /// Parses `#RRGGBB` or `RRGGBB` (surrounding spaces allowed, any case).
 pub fn parse_hex(text: &str) -> Option<Rgb> {
     let t = text.trim();
@@ -499,5 +516,37 @@ mod tests {
         for name in ["Classic 2", "My Classic", "Black to pink", "", "Custom"] {
             assert!(!is_protected(name), "{name}");
         }
+    }
+    #[test]
+    fn the_name_field_follows_the_dropdown() {
+        let listed = vec!["Classic".to_string(), "Mine".to_string()];
+        // Game default empties a profile's name, built in or listed, in any case.
+        assert_eq!(
+            name_for_choice(&listed, CHOICE_GAME_DEFAULT, "Classic"),
+            Some(String::new())
+        );
+        assert_eq!(
+            name_for_choice(&listed, CHOICE_GAME_DEFAULT, " mine "),
+            Some(String::new())
+        );
+        assert_eq!(
+            name_for_choice(&listed, CHOICE_GAME_DEFAULT, "Remastered"),
+            Some(String::new())
+        );
+        // ...but keeps a new name and leaves an empty field alone.
+        assert_eq!(
+            name_for_choice(&listed, CHOICE_GAME_DEFAULT, "New one"),
+            None
+        );
+        assert_eq!(name_for_choice(&listed, CHOICE_GAME_DEFAULT, ""), None);
+        // A listed profile puts its name there unless it is there already.
+        assert_eq!(
+            name_for_choice(&listed, 3, "Classic"),
+            Some("Mine".to_string())
+        );
+        assert_eq!(name_for_choice(&listed, 3, "mine"), None);
+        // Custom and out of range leave it.
+        assert_eq!(name_for_choice(&listed, CHOICE_CUSTOM, "Classic"), None);
+        assert_eq!(name_for_choice(&listed, 9, "Classic"), None);
     }
 }
