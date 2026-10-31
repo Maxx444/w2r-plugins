@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn a_new_file_is_maxx444s_color_profiles_json() {
-        // Byte for byte the file Maxx444 uses (2026-10-26), so a fresh install starts with it.
+        // Byte for byte the file Maxx444 uses (2026-10-30), so a fresh install starts with it.
         let expected = include_str!("../tests/color_profiles.json");
         assert_eq!(write(&default_profiles()), expected);
     }

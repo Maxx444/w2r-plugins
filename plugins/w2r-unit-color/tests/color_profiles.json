@@ -105,12 +105,8 @@
       "colors": {
         "players": [
           {
-            "player": 2,
-            "color": "#003CC0"
-          },
-          {
             "player": 4,
-            "color": "#643296"
+            "color": "#6A0DAD"
           },
           {
             "player": 6,
@@ -124,12 +120,8 @@
       "colors": {
         "players": [
           {
-            "player": 2,
-            "color": "#003CC0"
-          },
-          {
             "player": 4,
-            "color": "#643296"
+            "color": "#6A0DAD"
           },
           {
             "player": 6,

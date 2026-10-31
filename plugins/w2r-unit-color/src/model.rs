@@ -32,7 +32,7 @@ pub const CYAN: Rgb = [0x00, 0xc6, 0xe0];
 /// The pink of the built-in pink profiles (as in Maxx444's color_profiles.json).
 pub const MAGENTA: Rgb = [0xff, 0x00, 0xff];
 /// The violet of Maxx444's profiles.
-pub const MAXX_VIOLET: Rgb = [0x64, 0x32, 0x96];
+pub const MAXX_VIOLET: Rgb = [0x6a, 0x0d, 0xad];
 
 /// Classic Warcraft II colours (the DOS / Battle.net Edition palette).
 pub const CLASSIC: [Rgb; PLAYERS] = [
@@ -81,10 +81,9 @@ pub fn default_profiles() -> Vec<Profile> {
         colors,
         extra: Vec::new(),
     };
-    // Maxx444's: classic blue and a deeper violet, with black as pink or cyan.
+    // Maxx444's: a deeper violet, with black as pink or cyan.
     let maxx = |rgb| {
         let mut c = [None; PLAYERS];
-        c[1] = Some(CLASSIC[1]);
         c[3] = Some(MAXX_VIOLET);
         c[BLACK] = Some(rgb);
         c
